@@ -646,12 +646,35 @@ export function useProjectsState({
     void hydrateProjectTaskMaster(selectedProject.projectId);
   }, [hydrateProjectTaskMaster, selectedProject?.projectId]);
 
-  // Auto-select the project when there is only one, so the user lands on the new session page
+  // On first load with no session in the URL, jump straight to the most recently
+  // active session across all projects (so opening the app doesn't land on a
+  // blank page). Runs once per mount; if there are no sessions yet, fall back to
+  // auto-selecting the single project's new-session page.
+  const didAutoLandRef = useRef(false);
   useEffect(() => {
-    if (!isLoadingProjects && projects.length === 1 && !selectedProject && !sessionId) {
+    if (didAutoLandRef.current || isLoadingProjects || sessionId || selectedProject) {
+      return;
+    }
+
+    let best: { id: string; t: number } | null = null;
+    for (const project of projects) {
+      for (const session of project.sessions ?? []) {
+        const parsed = session.lastActivity ? Date.parse(session.lastActivity) : 0;
+        const t = Number.isNaN(parsed) ? 0 : parsed;
+        if (!best || t > best.t) {
+          best = { id: String(session.id), t };
+        }
+      }
+    }
+
+    if (best) {
+      didAutoLandRef.current = true;
+      navigate(`/session/${best.id}`, { replace: true });
+    } else if (projects.length === 1) {
+      didAutoLandRef.current = true;
       setSelectedProject(projects[0]);
     }
-  }, [isLoadingProjects, projects, selectedProject, sessionId]);
+  }, [isLoadingProjects, projects, selectedProject, sessionId, navigate]);
 
   // Realtime sidebar updates. The backend pushes per-session deltas
   // (`session_upserted`) instead of full project snapshots, so each event is
