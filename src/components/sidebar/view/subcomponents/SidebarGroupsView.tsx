@@ -64,6 +64,8 @@ function SessionRow({
   });
 
   return (
+    // The whole row is the drag source (grip is just a visual hint) so touch
+    // users can long-press anywhere to drag; a click/tap still opens the session.
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }}
@@ -71,17 +73,10 @@ function SessionRow({
         selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
       }`}
       onClick={onOpen}
+      {...listeners}
+      {...attributes}
     >
-      <button
-        type="button"
-        className="cursor-grab touch-none p-0.5 text-muted-foreground opacity-0 active:cursor-grabbing group-hover/row:opacity-100"
-        title="拖动到分组"
-        onClick={(e) => e.stopPropagation()}
-        {...listeners}
-        {...attributes}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
+      <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/row:opacity-100" />
       <span className="flex-1 truncate">{sessionTitle(entry.session)}</span>
       {trailing}
     </div>
