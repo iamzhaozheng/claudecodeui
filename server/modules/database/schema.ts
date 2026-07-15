@@ -138,6 +138,30 @@ CREATE TABLE IF NOT EXISTS app_config (
 );
 `;
 
+// User-defined custom groups of sessions (a "collection" that can span projects).
+export const SESSION_GROUPS_TABLE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS session_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+// Membership: a session can belong to multiple groups (many-to-many, collection semantics).
+export const SESSION_GROUP_MEMBERS_TABLE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS session_group_members (
+    group_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    project_id TEXT,
+    provider TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, session_id),
+    FOREIGN KEY (group_id) REFERENCES session_groups(id) ON DELETE CASCADE
+);
+`;
+
 export const INIT_SCHEMA_SQL = `
 -- Initialize authentication database
 PRAGMA foreign_keys = ON;
@@ -181,4 +205,9 @@ CREATE INDEX IF NOT EXISTS idx_session_ids_lookup ON sessions(session_id);
 ${LAST_SCANNED_AT_SQL}
 
 ${APP_CONFIG_TABLE_SCHEMA_SQL}
+
+${SESSION_GROUPS_TABLE_SCHEMA_SQL}
+${SESSION_GROUP_MEMBERS_TABLE_SCHEMA_SQL}
+CREATE INDEX IF NOT EXISTS idx_session_group_members_session ON session_group_members(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_group_members_group_pos ON session_group_members(group_id, position);
 `;

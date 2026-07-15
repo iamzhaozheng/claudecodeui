@@ -9,10 +9,12 @@ import type { ConversationSearchResults, SearchProgress } from '../../hooks/useS
 import type { ArchivedProjectListItem, ArchivedSessionListItem, SidebarSearchMode } from '../../types/types';
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
 import { getAllSessions } from '../../utils/utils';
+import type { SessionGroupsController } from '../../hooks/useSessionGroups';
 
 import SidebarFooter from './SidebarFooter';
 import SidebarHeader from './SidebarHeader';
 import SidebarProjectList, { type SidebarProjectListProps } from './SidebarProjectList';
+import SidebarGroupsView from './SidebarGroupsView';
 
 function HighlightedSnippet({ snippet, highlights }: { snippet: string; highlights: { start: number; end: number }[] }) {
   const parts: ReactNode[] = [];
@@ -148,6 +150,7 @@ type SidebarContentProps = {
   onShowVersionModal: () => void;
   onShowSettings: () => void;
   projectListProps: SidebarProjectListProps;
+  sessionGroups: SessionGroupsController;
   t: TFunction;
 };
 
@@ -186,6 +189,7 @@ export default function SidebarContent({
   onShowVersionModal,
   onShowSettings,
   projectListProps,
+  sessionGroups,
   t,
 }: SidebarContentProps) {
   const showConversationSearch = searchMode === 'conversations' && searchFilter.trim().length >= 2;
@@ -604,6 +608,8 @@ export default function SidebarContent({
               ))}
             </div>
           )
+        ) : searchMode === 'conversations' ? (
+          <SidebarGroupsView sessionGroups={sessionGroups} projectListProps={projectListProps} />
         ) : (
           <SidebarProjectList {...projectListProps} />
         )}

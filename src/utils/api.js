@@ -231,6 +231,41 @@ export const api = {
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectId)}/toggle-star`, {
       method: 'POST',
     }),
+  // Custom session groups (user-defined collections)
+  listSessionGroups: () => authenticatedFetch('/api/projects/groups'),
+  createSessionGroup: (name) =>
+    authenticatedFetch('/api/projects/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  renameSessionGroup: (groupId, name) =>
+    authenticatedFetch(`/api/projects/groups/${groupId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  deleteSessionGroup: (groupId) =>
+    authenticatedFetch(`/api/projects/groups/${groupId}`, {
+      method: 'DELETE',
+    }),
+  reorderSessionGroups: (ids) =>
+    authenticatedFetch('/api/projects/groups/order', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
+  addSessionToGroup: (groupId, member) =>
+    authenticatedFetch(`/api/projects/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(member),
+    }),
+  removeSessionFromGroup: (groupId, sessionId) =>
+    authenticatedFetch(`/api/projects/groups/${groupId}/members/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    }),
+  reorderGroupMembers: (groupId, sessionIds) =>
+    authenticatedFetch(`/api/projects/groups/${groupId}/members/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ sessionIds }),
+    }),
   readFile: (projectId, filePath) =>
     authenticatedFetch(`/api/file-tree/projects/${projectId}/file?filePath=${encodeURIComponent(filePath)}`),
   readFileBlob: (projectId, filePath) =>

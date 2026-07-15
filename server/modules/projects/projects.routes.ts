@@ -7,6 +7,16 @@ import { AppError, asyncHandler, createApiSuccessResponse } from '@/shared/utils
 import { getArchivedProjectsWithSessions, getProjectSessionsPage, getProjectsWithSessions } from '@/modules/projects/services/projects-with-sessions-fetch.service.js';
 import { deleteOrArchiveProject, restoreArchivedProject } from '@/modules/projects/services/project-delete.service.js';
 import { applyLegacyStarredProjectIds, toggleProjectStar } from '@/modules/projects/services/project-star.service.js';
+import {
+  addSessionToGroup,
+  createSessionGroup,
+  deleteSessionGroup,
+  listSessionGroups,
+  removeSessionFromGroup,
+  renameSessionGroup,
+  reorderGroupMembers,
+  reorderSessionGroups,
+} from '@/modules/projects/services/session-groups.service.js';
 
 const router = express.Router();
 
@@ -224,6 +234,64 @@ router.get(
     const projectId = typeof req.params.projectId === 'string' ? req.params.projectId : '';
     const taskMasterDetails = await getProjectTaskMaster(projectId);
     res.json(taskMasterDetails);
+  }),
+);
+
+// ─── Custom session groups (user-defined collections spanning projects) ──────
+// Declared before the `/:projectId` param routes so `/groups` is never shadowed.
+router.get(
+  '/groups',
+  asyncHandler(async (_req, res) => {
+    res.json(createApiSuccessResponse(listSessionGroups()));
+  }),
+);
+
+router.post(
+  '/groups',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(createSessionGroup(req.body?.name)));
+  }),
+);
+
+router.put(
+  '/groups/order',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(reorderSessionGroups(req.body?.ids)));
+  }),
+);
+
+router.patch(
+  '/groups/:groupId',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(renameSessionGroup(req.params.groupId, req.body?.name)));
+  }),
+);
+
+router.delete(
+  '/groups/:groupId',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(deleteSessionGroup(req.params.groupId)));
+  }),
+);
+
+router.post(
+  '/groups/:groupId/members',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(addSessionToGroup(req.params.groupId, req.body ?? {})));
+  }),
+);
+
+router.put(
+  '/groups/:groupId/members/order',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(reorderGroupMembers(req.params.groupId, req.body?.sessionIds)));
+  }),
+);
+
+router.delete(
+  '/groups/:groupId/members/:sessionId',
+  asyncHandler(async (req, res) => {
+    res.json(createApiSuccessResponse(removeSessionFromGroup(req.params.groupId, req.params.sessionId)));
   }),
 );
 

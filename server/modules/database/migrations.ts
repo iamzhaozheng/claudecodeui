@@ -7,6 +7,8 @@ import {
   PROJECTS_TABLE_SCHEMA_SQL,
   PUSH_SUBSCRIPTIONS_TABLE_SCHEMA_SQL,
   SESSIONS_TABLE_SCHEMA_SQL,
+  SESSION_GROUPS_TABLE_SCHEMA_SQL,
+  SESSION_GROUP_MEMBERS_TABLE_SCHEMA_SQL,
   USER_NOTIFICATION_PREFERENCES_TABLE_SCHEMA_SQL,
   VAPID_KEYS_TABLE_SCHEMA_SQL,
 } from '@/modules/database/schema.js';
@@ -487,6 +489,13 @@ export const runMigrations = (db: Database) => {
     }
 
     db.exec(LAST_SCANNED_AT_SQL);
+
+    // Custom session groups (user-defined collections).
+    db.exec(SESSION_GROUPS_TABLE_SCHEMA_SQL);
+    db.exec(SESSION_GROUP_MEMBERS_TABLE_SCHEMA_SQL);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_session_group_members_session ON session_group_members(session_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_session_group_members_group_pos ON session_group_members(group_id, position)');
+
     console.log('Database migrations completed successfully');
   } catch (error: any) {
     console.error('Error running migrations:', error.message);
