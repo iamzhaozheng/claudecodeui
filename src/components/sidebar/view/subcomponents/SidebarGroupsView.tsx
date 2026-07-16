@@ -12,7 +12,6 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, ChevronRight, FolderPlus, GripVertical, Pencil, Plus, Trash2, X } from 'lucide-react';
 
 import type { Project, ProjectSession } from '../../../../types/app';
@@ -58,7 +57,7 @@ function SessionRow({
     projectId: entry.project.projectId,
     provider: (entry.session.__provider as string) || 'claude',
   };
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `sess:${entry.session.id}`,
     data: payload,
   });
@@ -66,9 +65,10 @@ function SessionRow({
   return (
     // The whole row is the drag source (grip is just a visual hint) so touch
     // users can long-press anywhere to drag; a click/tap still opens the session.
+    // Visual movement is handled by <DragOverlay>, so we only dim the original.
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
       className={`group/row flex cursor-pointer items-center gap-1 rounded-md px-1 py-1.5 text-sm ${
         selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
       }`}
@@ -147,6 +147,11 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
 
   const membershipFor = (sessionId: string) =>
     new Set(groups.filter((g) => g.members.some((m) => m.sessionId === sessionId)).map((g) => g.id));
+
+  // Single-group / folder model: a session shows either inside its one group or
+  // in the "ungrouped" list below — never both.
+  const groupedIds = new Set(groups.flatMap((g) => g.members.map((m) => m.sessionId)));
+  const ungroupedSessions = flatSessions.filter((entry) => !groupedIds.has(entry.session.id));
 
   const handleDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as DragPayload | undefined;
@@ -332,9 +337,12 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
         {/* ── All conversations (flat) ──────────────────────────────── */}
         <div>
           <div className="mb-1 px-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">全部对话</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">未分组对话</span>
           </div>
-          {flatSessions.map((entry) => {
+          {ungroupedSessions.length === 0 && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">所有对话都已归组。</p>
+          )}
+          {ungroupedSessions.map((entry) => {
             const sessionId = entry.session.id;
             const memberIds = membershipFor(sessionId);
             return (

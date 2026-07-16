@@ -84,21 +84,26 @@ export const sessionGroupsDb = {
     tx(orderedIds);
   },
 
+  // Single-group semantics: a session lives in at most one group, so adding it
+  // to a group first removes it from any other group.
   addMember(
     groupId: number,
     member: { sessionId: string; projectId?: string | null; provider?: string | null },
   ): void {
     const db = getConnection();
-    const nextPos = (
-      db
-        .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM session_group_members WHERE group_id = ?')
-        .get(groupId) as { p: number }
-    ).p;
-    db.prepare(
-      `INSERT INTO session_group_members (group_id, session_id, project_id, provider, position)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (group_id, session_id) DO NOTHING`,
-    ).run(groupId, member.sessionId, member.projectId ?? null, member.provider ?? null, nextPos);
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM session_group_members WHERE session_id = ?').run(member.sessionId);
+      const nextPos = (
+        db
+          .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM session_group_members WHERE group_id = ?')
+          .get(groupId) as { p: number }
+      ).p;
+      db.prepare(
+        `INSERT INTO session_group_members (group_id, session_id, project_id, provider, position)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(groupId, member.sessionId, member.projectId ?? null, member.provider ?? null, nextPos);
+    });
+    tx();
   },
 
   removeMember(groupId: number, sessionId: string): void {

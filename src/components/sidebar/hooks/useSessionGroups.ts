@@ -75,18 +75,22 @@ export function useSessionGroups() {
 
   const addSessionToGroup = useCallback(
     async (groupId: number, member: { sessionId: string; projectId?: string | null; provider?: string | null }) => {
+      // Single-group: drop the session from every group, then add it to the target.
       setGroups((prev) =>
         prev.map((g) => {
-          if (g.id !== groupId || g.members.some((m) => m.sessionId === member.sessionId)) return g;
+          const cleaned = g.members.filter((m) => m.sessionId !== member.sessionId);
+          if (g.id !== groupId) {
+            return cleaned.length === g.members.length ? g : { ...g, members: cleaned };
+          }
           return {
             ...g,
             members: [
-              ...g.members,
+              ...cleaned,
               {
                 sessionId: member.sessionId,
                 projectId: member.projectId ?? null,
                 provider: member.provider ?? null,
-                position: g.members.length,
+                position: cleaned.length,
               },
             ],
           };
