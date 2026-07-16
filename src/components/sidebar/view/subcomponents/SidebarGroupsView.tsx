@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -12,9 +12,9 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { ChevronDown, ChevronRight, FolderPlus, GripVertical, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, FolderPlus, GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 
-import type { Project, ProjectSession } from '../../../../types/app';
+import type { LLMProvider, Project, ProjectSession } from '../../../../types/app';
 import type { SessionWithProvider } from '../../types/types';
 import type { SessionGroupsController } from '../../hooks/useSessionGroups';
 
@@ -40,16 +40,26 @@ function sessionTime(session: ProjectSession): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-/** One conversation row. Draggable by its grip handle so taps/clicks elsewhere still open it. */
+/** One conversation row: draggable (grip hint + long-press), inline-renamable, with a ⋯ menu. */
 function SessionRow({
   entry,
   selected,
   onOpen,
+  editing,
+  editValue,
+  onEditChange,
+  onEditCommit,
+  onEditCancel,
   trailing,
 }: {
   entry: SessionEntry;
   selected: boolean;
   onOpen: () => void;
+  editing: boolean;
+  editValue: string;
+  onEditChange: (v: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
   trailing?: ReactNode;
 }) {
   const payload: DragPayload = {
@@ -61,23 +71,36 @@ function SessionRow({
     id: `sess:${entry.session.id}`,
     data: payload,
   });
+  // Disable dragging while renaming so the text input stays usable.
+  const dragProps = editing ? {} : { ...listeners, ...attributes };
 
   return (
-    // The whole row is the drag source (grip is just a visual hint) so touch
-    // users can long-press anywhere to drag; a click/tap still opens the session.
-    // Visual movement is handled by <DragOverlay>, so we only dim the original.
     <div
       ref={setNodeRef}
       style={{ opacity: isDragging ? 0.4 : 1 }}
       className={`group/row flex cursor-pointer items-center gap-1 rounded-md px-1 py-1.5 text-sm ${
         selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
       }`}
-      onClick={onOpen}
-      {...listeners}
-      {...attributes}
+      onClick={editing ? undefined : onOpen}
+      {...dragProps}
     >
       <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/row:opacity-100" />
-      <span className="flex-1 truncate">{sessionTitle(entry.session)}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={editValue}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onEditChange(e.target.value)}
+          onBlur={onEditCommit}
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === 'Enter') onEditCommit();
+            if (e.key === 'Escape') onEditCancel();
+          }}
+          className="flex-1 rounded border bg-background px-1 py-0.5 text-sm"
+        />
+      ) : (
+        <span className="flex-1 truncate">{sessionTitle(entry.session)}</span>
+      )}
       {trailing}
     </div>
   );
@@ -93,8 +116,124 @@ function GroupDroppable({ groupId, children }: { groupId: number; children: Reac
   );
 }
 
+/** ⋯ popup: rename / delete / move-to-group / remove-from-group / new group. */
+function SessionMoreMenu({
+  groups,
+  currentGroupId,
+  onRename,
+  onDelete,
+  onSetGroup,
+  onRemoveFromGroup,
+  onCreateAndAdd,
+  onClose,
+}: {
+  groups: Array<{ id: number; name: string }>;
+  currentGroupId: number | null;
+  onRename: () => void;
+  onDelete: () => void;
+  onSetGroup: (groupId: number) => void;
+  onRemoveFromGroup: () => void;
+  onCreateAndAdd: (name: string) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [name, setName] = useState('');
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-2 top-8 z-50 w-52 rounded-md border bg-popover p-1 text-sm shadow-lg"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
+        onClick={() => {
+          onClose();
+          onRename();
+        }}
+      >
+        <Pencil className="h-3.5 w-3.5" /> 改名
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-accent"
+        onClick={() => {
+          onClose();
+          onDelete();
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" /> 删除对话
+      </button>
+
+      <div className="my-1 border-t" />
+      <p className="px-2 py-0.5 text-xs text-muted-foreground">分组</p>
+      {groups.map((g) => (
+        <button
+          key={g.id}
+          type="button"
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
+          onClick={() => {
+            onClose();
+            if (g.id !== currentGroupId) onSetGroup(g.id);
+          }}
+        >
+          <span className="w-3.5 text-center text-primary">{g.id === currentGroupId ? '●' : '○'}</span>
+          <span className="truncate">{g.name}</span>
+        </button>
+      ))}
+      {currentGroupId != null && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-accent"
+          onClick={() => {
+            onClose();
+            onRemoveFromGroup();
+          }}
+        >
+          <span className="w-3.5 text-center">×</span> 移出分组
+        </button>
+      )}
+      <div className="mt-1 flex items-center gap-1 border-t px-1 pt-1">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && name.trim()) {
+              void onCreateAndAdd(name.trim());
+              setName('');
+              onClose();
+            }
+          }}
+          placeholder="新建组并移入…"
+          className="flex-1 rounded border bg-background px-2 py-1 text-xs"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function SidebarGroupsView({ sessionGroups, projectListProps }: Props) {
-  const { projects, selectedSession, onSessionSelect } = projectListProps;
+  const {
+    projects,
+    selectedSession,
+    onSessionSelect,
+    editingSession,
+    editingSessionName,
+    onEditingSessionNameChange,
+    onStartEditingSession,
+    onCancelEditingSession,
+    onSaveEditingSession,
+    onDeleteSession,
+  } = projectListProps;
   const { groups, createGroup, renameGroup, deleteGroup, addSessionToGroup, removeSessionFromGroup } = sessionGroups;
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -102,7 +241,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [addMenuFor, setAddMenuFor] = useState<string | null>(null);
+  const [moreMenuFor, setMoreMenuFor] = useState<string | null>(null);
   const [dragTitle, setDragTitle] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -130,6 +269,9 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     return { flatSessions: flat, byId: map };
   }, [projects]);
 
+  const groupedIds = new Set(groups.flatMap((g) => g.members.map((m) => m.sessionId)));
+  const ungroupedSessions = flatSessions.filter((entry) => !groupedIds.has(entry.session.id));
+
   const toggleExpanded = (id: number) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -144,14 +286,6 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     setCreating(false);
     if (name) await createGroup(name);
   };
-
-  const membershipFor = (sessionId: string) =>
-    new Set(groups.filter((g) => g.members.some((m) => m.sessionId === sessionId)).map((g) => g.id));
-
-  // Single-group / folder model: a session shows either inside its one group or
-  // in the "ungrouped" list below — never both.
-  const groupedIds = new Set(groups.flatMap((g) => g.members.map((m) => m.sessionId)));
-  const ungroupedSessions = flatSessions.filter((entry) => !groupedIds.has(entry.session.id));
 
   const handleDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as DragPayload | undefined;
@@ -168,11 +302,68 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     const groupId = Number(overId.slice('group:'.length));
     const data = active.data.current as DragPayload | undefined;
     if (!data) return;
-    const group = groups.find((g) => g.id === groupId);
-    if (group && !group.members.some((m) => m.sessionId === data.sessionId)) {
-      void addSessionToGroup(groupId, data);
-      setExpanded((prev) => new Set(prev).add(groupId));
-    }
+    void addSessionToGroup(groupId, data);
+    setExpanded((prev) => new Set(prev).add(groupId));
+  };
+
+  // Renders a conversation row with its ⋯ menu. `currentGroupId` is the group it
+  // is shown under (null = the ungrouped list).
+  const renderRow = (entry: SessionEntry, currentGroupId: number | null) => {
+    const sessionId = entry.session.id;
+    const provider = (entry.session.__provider as LLMProvider) || 'claude';
+    return (
+      <div key={sessionId} className="relative">
+        <SessionRow
+          entry={entry}
+          selected={selectedSession?.id === sessionId}
+          onOpen={() => onSessionSelect(entry.session, entry.project.projectId)}
+          editing={editingSession === sessionId}
+          editValue={editingSessionName}
+          onEditChange={onEditingSessionNameChange}
+          onEditCommit={() => {
+            onSaveEditingSession(entry.project.projectId, sessionId, editingSessionName, provider);
+          }}
+          onEditCancel={onCancelEditingSession}
+          trailing={
+            <button
+              type="button"
+              className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent group-hover/row:opacity-100"
+              title="更多"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMoreMenuFor(moreMenuFor === sessionId ? null : sessionId);
+              }}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          }
+        />
+        {moreMenuFor === sessionId && (
+          <SessionMoreMenu
+            groups={groups.map((g) => ({ id: g.id, name: g.name }))}
+            currentGroupId={currentGroupId}
+            onRename={() => onStartEditingSession(sessionId, sessionTitle(entry.session))}
+            onDelete={() => onDeleteSession(entry.project.projectId, sessionId, sessionTitle(entry.session), provider)}
+            onSetGroup={(groupId) =>
+              void addSessionToGroup(groupId, {
+                sessionId,
+                projectId: entry.project.projectId,
+                provider,
+              })
+            }
+            onRemoveFromGroup={() => {
+              if (currentGroupId != null) void removeSessionFromGroup(currentGroupId, sessionId);
+            }}
+            onCreateAndAdd={async (name) => {
+              const id = await createGroup(name);
+              if (id != null)
+                await addSessionToGroup(id, { sessionId, projectId: entry.project.projectId, provider });
+            }}
+            onClose={() => setMoreMenuFor(null)}
+          />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -219,7 +410,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
 
           {groups.length === 0 && !creating && (
             <p className="px-2 py-1 text-xs text-muted-foreground">
-              还没有分组。点右上 + 新建,然后把下面的对话拖进来(或点对话上的「加入组」)。
+              还没有分组。点右上 + 新建,然后把下面的对话拖进来(或用对话的 ⋯ 菜单)。
             </p>
           )}
 
@@ -263,7 +454,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                     <button
                       type="button"
                       className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent group-hover/gh:opacity-100"
-                      title="重命名"
+                      title="重命名分组"
                       onClick={() => {
                         setRenamingId(group.id);
                         setRenameValue(group.name);
@@ -290,19 +481,6 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                       )}
                       {group.members.map((member) => {
                         const entry = byId.get(member.sessionId);
-                        const removeBtn = (
-                          <button
-                            type="button"
-                            className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent group-hover/row:opacity-100"
-                            title="移出分组"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void removeSessionFromGroup(group.id, member.sessionId);
-                            }}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        );
                         if (!entry) {
                           return (
                             <div
@@ -312,19 +490,18 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                               <span className="flex-1 truncate text-muted-foreground">
                                 会话 {member.sessionId.slice(0, 8)}
                               </span>
-                              {removeBtn}
+                              <button
+                                type="button"
+                                className="rounded p-1 text-muted-foreground hover:bg-accent"
+                                title="移出分组"
+                                onClick={() => void removeSessionFromGroup(group.id, member.sessionId)}
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </button>
                             </div>
                           );
                         }
-                        return (
-                          <SessionRow
-                            key={member.sessionId}
-                            entry={entry}
-                            selected={selectedSession?.id === member.sessionId}
-                            onOpen={() => onSessionSelect(entry.session, entry.project.projectId)}
-                            trailing={removeBtn}
-                          />
-                        );
+                        return renderRow(entry, group.id);
                       })}
                     </div>
                   )}
@@ -334,7 +511,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
           })}
         </div>
 
-        {/* ── All conversations (flat) ──────────────────────────────── */}
+        {/* ── Ungrouped conversations ───────────────────────────────── */}
         <div>
           <div className="mb-1 px-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">未分组对话</span>
@@ -342,60 +519,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
           {ungroupedSessions.length === 0 && (
             <p className="px-2 py-1 text-xs text-muted-foreground">所有对话都已归组。</p>
           )}
-          {ungroupedSessions.map((entry) => {
-            const sessionId = entry.session.id;
-            const memberIds = membershipFor(sessionId);
-            return (
-              <div key={sessionId} className="relative">
-                <SessionRow
-                  entry={entry}
-                  selected={selectedSession?.id === sessionId}
-                  onOpen={() => onSessionSelect(entry.session, entry.project.projectId)}
-                  trailing={
-                    <button
-                      type="button"
-                      className={`rounded p-1 hover:bg-accent ${
-                        memberIds.size > 0
-                          ? 'text-primary opacity-100'
-                          : 'text-muted-foreground opacity-0 group-hover/row:opacity-100'
-                      }`}
-                      title="加入分组"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAddMenuFor(addMenuFor === sessionId ? null : sessionId);
-                      }}
-                    >
-                      <FolderPlus className="h-3.5 w-3.5" />
-                    </button>
-                  }
-                />
-                {addMenuFor === sessionId && (
-                  <AddToGroupMenu
-                    groups={groups.map((g) => ({ id: g.id, name: g.name, member: memberIds.has(g.id) }))}
-                    onToggle={(groupId, isMember) => {
-                      if (isMember) void removeSessionFromGroup(groupId, sessionId);
-                      else
-                        void addSessionToGroup(groupId, {
-                          sessionId,
-                          projectId: entry.project.projectId,
-                          provider: (entry.session.__provider as string) || 'claude',
-                        });
-                    }}
-                    onCreateAndAdd={async (name) => {
-                      const id = await createGroup(name);
-                      if (id != null)
-                        await addSessionToGroup(id, {
-                          sessionId,
-                          projectId: entry.project.projectId,
-                          provider: (entry.session.__provider as string) || 'claude',
-                        });
-                    }}
-                    onClose={() => setAddMenuFor(null)}
-                  />
-                )}
-              </div>
-            );
-          })}
+          {ungroupedSessions.map((entry) => renderRow(entry, null))}
         </div>
       </div>
 
@@ -407,70 +531,5 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
         ) : null}
       </DragOverlay>
     </DndContext>
-  );
-}
-
-function AddToGroupMenu({
-  groups,
-  onToggle,
-  onCreateAndAdd,
-  onClose,
-}: {
-  groups: Array<{ id: number; name: string; member: boolean }>;
-  onToggle: (groupId: number, isMember: boolean) => void;
-  onCreateAndAdd: (name: string) => void | Promise<void>;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
-
-  return (
-    <div
-      ref={ref}
-      className="absolute right-2 top-8 z-50 w-52 rounded-md border bg-popover p-1 text-sm shadow-lg"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {groups.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">还没有分组</p>}
-      {groups.map((g) => (
-        <button
-          key={g.id}
-          type="button"
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
-          onClick={() => onToggle(g.id, g.member)}
-        >
-          <span
-            className={`flex h-4 w-4 items-center justify-center rounded border text-xs ${
-              g.member ? 'border-primary bg-primary text-primary-foreground' : ''
-            }`}
-          >
-            {g.member ? '✓' : ''}
-          </span>
-          <span className="truncate">{g.name}</span>
-        </button>
-      ))}
-      <div className="mt-1 flex items-center gap-1 border-t px-1 pt-1">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && name.trim()) {
-              void onCreateAndAdd(name.trim());
-              setName('');
-              onClose();
-            }
-          }}
-          placeholder="新建组并加入…"
-          className="flex-1 rounded border bg-background px-2 py-1 text-xs"
-        />
-      </div>
-    </div>
   );
 }
