@@ -221,6 +221,66 @@ function SessionMoreMenu({
   );
 }
 
+/** ⋯ popup for a group header: new session / rename / delete. */
+function GroupMoreMenu({
+  onNewSession,
+  onRename,
+  onDelete,
+  onClose,
+}: {
+  onNewSession: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      className="absolute right-1 top-8 z-50 w-44 rounded-md border bg-popover p-1 text-sm shadow-lg"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
+        onClick={() => {
+          onClose();
+          onNewSession();
+        }}
+      >
+        <Plus className="h-3.5 w-3.5" /> 新建 session
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
+        onClick={() => {
+          onClose();
+          onRename();
+        }}
+      >
+        <Pencil className="h-3.5 w-3.5" /> 改名
+      </button>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-accent"
+        onClick={() => {
+          onClose();
+          onDelete();
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" /> 删除分组
+      </button>
+    </div>
+  );
+}
+
 export default function SidebarGroupsView({ sessionGroups, projectListProps }: Props) {
   const {
     projects,
@@ -234,7 +294,15 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     onSaveEditingSession,
     onDeleteSession,
   } = projectListProps;
-  const { groups, createGroup, renameGroup, deleteGroup, addSessionToGroup, removeSessionFromGroup } = sessionGroups;
+  const {
+    groups,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    addSessionToGroup,
+    removeSessionFromGroup,
+    createSessionInGroup,
+  } = sessionGroups;
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -242,6 +310,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [moreMenuFor, setMoreMenuFor] = useState<string | null>(null);
+  const [groupMenuFor, setGroupMenuFor] = useState<number | null>(null);
   const [dragTitle, setDragTitle] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -285,6 +354,26 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     setNewName('');
     setCreating(false);
     if (name) await createGroup(name);
+  };
+
+  // Start a brand-new conversation and drop it into this group, then open it.
+  const newSessionInGroup = async (groupId: number) => {
+    setGroupMenuFor(null);
+    const group = groups.find((g) => g.id === groupId);
+    const memberProject = group?.members.map((m) => byId.get(m.sessionId)?.project).find(Boolean);
+    const selectedProject = projects.find((p) => (p.sessions ?? []).some((s) => s.id === selectedSession?.id));
+    const project = memberProject || selectedProject || projects[0];
+    if (!project) return;
+    const projectPath = (project.fullPath || project.path || '') as string;
+    const sessionId = await createSessionInGroup(groupId, {
+      projectPath,
+      projectId: project.projectId,
+      provider: 'claude',
+    });
+    setExpanded((prev) => new Set(prev).add(groupId));
+    if (sessionId) {
+      onSessionSelect({ id: sessionId, __provider: 'claude' } as SessionWithProvider, project.projectId);
+    }
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -423,7 +512,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
             return (
               <GroupDroppable key={group.id} groupId={group.id}>
                 <div className="mb-0.5">
-                  <div className="group/gh flex items-center gap-1 rounded-md px-1 py-1 hover:bg-accent/60">
+                  <div className="group/gh relative flex items-center gap-1 rounded-md px-1 py-1 hover:bg-accent/60">
                     <button type="button" className="p-0.5" onClick={() => toggleExpanded(group.id)}>
                       {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </button>
@@ -458,24 +547,24 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                     <button
                       type="button"
                       className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent group-hover/gh:opacity-100"
-                      title="重命名分组"
-                      onClick={() => {
-                        setRenamingId(group.id);
-                        setRenameValue(group.name);
-                      }}
+                      title="更多"
+                      onClick={() => setGroupMenuFor(groupMenuFor === group.id ? null : group.id)}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      <MoreHorizontal className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent group-hover/gh:opacity-100"
-                      title="删除分组"
-                      onClick={() => {
-                        if (window.confirm(`删除分组「${group.name}」?(不会删除会话本身)`)) void deleteGroup(group.id);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {groupMenuFor === group.id && (
+                      <GroupMoreMenu
+                        onNewSession={() => void newSessionInGroup(group.id)}
+                        onRename={() => {
+                          setRenamingId(group.id);
+                          setRenameValue(group.name);
+                        }}
+                        onDelete={() => {
+                          if (window.confirm(`删除分组「${group.name}」?(不会删除会话本身)`)) void deleteGroup(group.id);
+                        }}
+                        onClose={() => setGroupMenuFor(null)}
+                      />
+                    )}
                   </div>
 
                   {isOpen && (

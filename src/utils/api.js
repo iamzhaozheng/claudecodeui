@@ -231,6 +231,11 @@ export const api = {
     authenticatedFetch(`/api/projects/${encodeURIComponent(projectId)}/toggle-star`, {
       method: 'POST',
     }),
+  createProviderSession: (provider, projectPath) =>
+    authenticatedFetch('/api/providers/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ provider, projectPath }),
+    }),
   // Custom session groups (user-defined collections)
   listSessionGroups: () => authenticatedFetch('/api/projects/groups'),
   createSessionGroup: (name) =>

@@ -110,6 +110,31 @@ export function useSessionGroups() {
     if (!res.ok) void refresh();
   }, [refresh]);
 
+  // Allocate a brand-new provider session, then drop it into the group.
+  const createSessionInGroup = useCallback(
+    async (
+      groupId: number,
+      opts: { projectPath: string; projectId: string; provider?: string },
+    ): Promise<string | null> => {
+      const provider = opts.provider || 'claude';
+      let sessionId: string | null = null;
+      try {
+        const res = await api.createProviderSession(provider, opts.projectPath);
+        if (res.ok) {
+          const body = await res.json();
+          sessionId = (body?.data?.sessionId ?? body?.sessionId ?? null) as string | null;
+        }
+      } catch {
+        sessionId = null;
+      }
+      if (sessionId) {
+        await addSessionToGroup(groupId, { sessionId, projectId: opts.projectId, provider });
+      }
+      return sessionId;
+    },
+    [addSessionToGroup],
+  );
+
   const reorderGroups = useCallback(async (orderedIds: number[]) => {
     setGroups((prev) => {
       const byId = new Map(prev.map((g) => [g.id, g]));
@@ -143,6 +168,7 @@ export function useSessionGroups() {
     deleteGroup,
     addSessionToGroup,
     removeSessionFromGroup,
+    createSessionInGroup,
     reorderGroups,
     reorderGroupMembers,
   };
