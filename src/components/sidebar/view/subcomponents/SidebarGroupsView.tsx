@@ -416,6 +416,10 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
 
           {groups.map((group) => {
             const isOpen = expanded.has(group.id);
+            // Hide members whose session is archived/deleted/not-loaded so no
+            // broken "会话 xxxx" placeholder appears; the membership stays in the
+            // DB so a restored session returns to its group.
+            const visibleMembers = group.members.filter((m) => byId.has(m.sessionId));
             return (
               <GroupDroppable key={group.id} groupId={group.id}>
                 <div className="mb-0.5">
@@ -448,7 +452,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                         onClick={() => toggleExpanded(group.id)}
                       >
                         <span className="truncate">{group.name}</span>
-                        <span className="text-xs text-muted-foreground">({group.members.length})</span>
+                        <span className="text-xs text-muted-foreground">({visibleMembers.length})</span>
                       </button>
                     )}
                     <button
@@ -476,33 +480,10 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
 
                   {isOpen && (
                     <div className="pl-5 pr-1">
-                      {group.members.length === 0 && (
+                      {visibleMembers.length === 0 && (
                         <p className="px-2 py-1 text-xs text-muted-foreground">空分组。把下面的对话拖进来。</p>
                       )}
-                      {group.members.map((member) => {
-                        const entry = byId.get(member.sessionId);
-                        if (!entry) {
-                          return (
-                            <div
-                              key={member.sessionId}
-                              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm"
-                            >
-                              <span className="flex-1 truncate text-muted-foreground">
-                                会话 {member.sessionId.slice(0, 8)}
-                              </span>
-                              <button
-                                type="button"
-                                className="rounded p-1 text-muted-foreground hover:bg-accent"
-                                title="移出分组"
-                                onClick={() => void removeSessionFromGroup(group.id, member.sessionId)}
-                              >
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          );
-                        }
-                        return renderRow(entry, group.id);
-                      })}
+                      {visibleMembers.map((member) => renderRow(byId.get(member.sessionId)!, group.id))}
                     </div>
                   )}
                 </div>
