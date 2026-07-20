@@ -104,6 +104,22 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
         const files = Array.isArray(msg.files) && msg.files.length > 0 ? msg.files : undefined;
         if (!content.trim() && !images && !files) continue;
 
+        // Auto-loaded skills (Claude invoking the Skill tool) are flagged by the
+        // server as a compact skill-load marker (skillName + short preview) so
+        // the UI can show a foldable row instead of a giant wall of text.
+        if (msg.isSkillLoad || content.startsWith('Base directory for this skill:')) {
+          const skillName = msg.skillName || content.split('\n', 1)[0].split('/').filter(Boolean).pop() || 'skill';
+          converted.push({
+            type: 'assistant',
+            content,
+            timestamp: msg.timestamp,
+            isSkillLoad: true,
+            skillName,
+            ...sharedMetadata,
+          });
+          break;
+        }
+
         if (msg.role === 'user') {
           // Parse task notifications
           const taskNotif = parseTaskNotification(content);

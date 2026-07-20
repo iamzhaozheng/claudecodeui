@@ -231,6 +231,36 @@ function isInternalContent(content: string): boolean {
   return INTERNAL_CONTENT_PREFIXES.some((prefix) => content.startsWith(prefix));
 }
 
+const SKILL_LOAD_PREFIX = 'Base directory for this skill:';
+
+/**
+ * When Claude invokes the Skill tool, the skill's full reference doc (often
+ * hundreds of KB) is injected as a meta user message beginning with
+ * `Base directory for this skill: <path>/<skill-name>`. Rendering that raw
+ * would drop a giant wall of text into the transcript. Detect it here and
+ * return the skill name plus a short preview so the UI can show a compact,
+ * foldable row instead. Returns null for anything that isn't a skill load.
+ */
+function detectSkillLoad(content: unknown): { name: string; preview: string } | null {
+  let text = '';
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    text = content
+      .map((part) => (part && typeof part === 'object' && part.type === 'text' ? String(part.text || '') : ''))
+      .join('');
+  }
+  if (!text.startsWith(SKILL_LOAD_PREFIX)) {
+    return null;
+  }
+  const firstLine = text.split('\n', 1)[0];
+  const name = firstLine.split('/').filter(Boolean).pop() || 'skill';
+  // Keep a small preview (the skill's own intro) for the expandable row; drop
+  // the rest so we never ship the whole doc to the client.
+  const preview = text.slice(0, 800);
+  return { name, preview };
+}
+
 /**
  * Claude wraps local slash-command metadata in lightweight XML-like tags inside
  * a plain string payload. We intentionally parse only the small tag surface we
@@ -319,6 +349,26 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     const messages: NormalizedMessage[] = [];
     const ts = raw.timestamp || new Date().toISOString();
     const baseId = raw.uuid || generateMessageId('claude');
+
+    // Skill-load injections (usually flagged isMeta:true) would otherwise be
+    // dropped by the isMeta filter below, or shipped in full. Emit a compact
+    // foldable marker for both live and history so the UI can collapse it.
+    if (raw.message?.role === 'user') {
+      const skill = detectSkillLoad(raw.message?.content);
+      if (skill) {
+        return [createNormalizedMessage({
+          id: `${baseId}_skill`,
+          sessionId,
+          timestamp: ts,
+          provider: PROVIDER,
+          kind: 'text',
+          role: 'assistant',
+          content: skill.preview,
+          isSkillLoad: true,
+          skillName: skill.name,
+        })];
+      }
+    }
 
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
       if (Array.isArray(raw.message.content)) {

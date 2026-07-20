@@ -79,6 +79,39 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
     return null;
   }
 
+  // Auto-loaded skill content: collapse the (often huge) injected reference doc
+  // into a compact, expandable row — the same fold/expand affordance the Claude
+  // Code terminal uses for tool calls — instead of a giant message bubble.
+  if (message.isSkillLoad) {
+    const preview = String(message.content || '');
+    return (
+      <div ref={messageRef} className="chat-message px-3 sm:px-0">
+        <details className="group/skill">
+          <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground/80 [&::-webkit-details-marker]:hidden">
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+              className="h-3 w-3 flex-shrink-0 transition-transform duration-150 group-open/skill:rotate-90"
+            >
+              <path d="M7 5l6 5-6 5V5z" />
+            </svg>
+            <span aria-hidden="true">🧩</span>
+            <span>
+              已加载技能 <span className="font-medium text-foreground/80">{message.skillName}</span>
+            </span>
+          </summary>
+          {preview.trim().length > 0 && (
+            <pre className="ml-[18px] mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {preview}
+              {'\n\n…（技能参考文档已省略，仅在模型上下文中加载）'}
+            </pre>
+          )}
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={messageRef}
