@@ -127,10 +127,12 @@ curl -sf -m 3 "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || die "服务没起来,
 STATUS="$(curl -s "http://127.0.0.1:$PORT/api/auth/status" 2>/dev/null || echo '')"
 if echo "$STATUS" | grep -q '"needsSetup":true'; then
   say "创建你的登录账号"
-  read -r -p "  用户名(建议用 wife): " GU
-  read -r -s -p "  密码: " GP; echo
+  # 非交互:GW_USER / GW_PASS 环境变量可预置(方便 Claude Code 一条命令跑完)
+  GU="${GW_USER:-}"; GP="${GW_PASS:-}"
+  [ -n "$GU" ] || read -r -p "  用户名(建议用 wife): " GU
+  [ -n "$GP" ] || { read -r -s -p "  密码: " GP; echo; }
   curl -s -X POST "http://127.0.0.1:$PORT/api/auth/register" -H "Content-Type: application/json" \
-    -d "{\"username\":\"$GU\",\"password\":\"$GP\"}" >/dev/null && echo "  ✓ 账号已创建"
+    -d "{\"username\":\"$GU\",\"password\":\"$GP\"}" >/dev/null && echo "  ✓ 账号已创建($GU)"
 else
   echo "  (已存在账号,跳过创建)"
 fi

@@ -993,21 +993,15 @@ export function useProjectsState({
       }
 
       if (isMobile) {
-        // Sessions are tagged with the owning project's DB `projectId` when
-        // picked from the sidebar (see useSidebarController); compare against
-        // the current selection's `projectId` so we know whether to collapse
-        // the sidebar after navigation.
-        const sessionProjectId = session.__projectId;
-        const currentProjectId = selectedProject?.projectId;
-
-        if (sessionProjectId !== currentProjectId) {
-          setSidebarOpen(false);
-        }
+        // On mobile, always collapse the sidebar after picking a session —
+        // including switching between sessions of the same project (the common
+        // case in the conversations/groups view).
+        setSidebarOpen(false);
       }
 
       navigate(`/session/${session.id}`);
     },
-    [activeTab, clearSessionAttention, isMobile, navigate, selectedProject?.projectId],
+    [activeTab, clearSessionAttention, isMobile, navigate],
   );
 
   const handleNewSession = useCallback(

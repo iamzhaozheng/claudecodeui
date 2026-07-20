@@ -81,6 +81,13 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
 
   for (const msg of messages) {
     const sharedMetadata = {
+      // Carry the normalized message id through so each rendered row gets a
+      // STABLE React key (see getIntrinsicMessageKey). Without this, streaming
+      // rows fall back to a timestamp+content key that changes on every ~100ms
+      // flush, remounting the (tall) assistant subtree and jerking the scroll
+      // position upward mid-answer. `__streaming_<sid>` stays constant for the
+      // whole stream, so the row is now reconciled in place.
+      messageId: msg.id,
       displayText: msg.displayText,
       commandName: msg.commandName,
       commandMessage: msg.commandMessage,
