@@ -44,6 +44,7 @@ function sessionTime(session: ProjectSession): number {
 function SessionRow({
   entry,
   selected,
+  needsAttention,
   onOpen,
   editing,
   editValue,
@@ -54,6 +55,7 @@ function SessionRow({
 }: {
   entry: SessionEntry;
   selected: boolean;
+  needsAttention: boolean;
   onOpen: () => void;
   editing: boolean;
   editValue: string;
@@ -85,6 +87,13 @@ function SessionRow({
       {...dragProps}
     >
       <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/row:opacity-100" />
+      {needsAttention && !selected && !editing && (
+        <span
+          role="status"
+          aria-label="有新回复,待跟进"
+          className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500"
+        />
+      )}
       {editing ? (
         <input
           autoFocus
@@ -293,6 +302,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     onCancelEditingSession,
     onSaveEditingSession,
     onDeleteSession,
+    attentionSessionIds,
   } = projectListProps;
   const {
     groups,
@@ -405,6 +415,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
         <SessionRow
           entry={entry}
           selected={selectedSession?.id === sessionId}
+          needsAttention={attentionSessionIds.has(sessionId)}
           onOpen={() => onSessionSelect(entry.session, entry.project.projectId)}
           editing={editingSession === sessionId}
           editValue={editingSessionName}
@@ -509,6 +520,9 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
             // broken "会话 xxxx" placeholder appears; the membership stays in the
             // DB so a restored session returns to its group.
             const visibleMembers = group.members.filter((m) => byId.has(m.sessionId));
+            // When a group is collapsed, surface a dot on its header if any
+            // conversation inside it has a new reply to follow up on.
+            const groupHasAttention = visibleMembers.some((m) => attentionSessionIds.has(m.sessionId));
             return (
               <GroupDroppable key={group.id} groupId={group.id}>
                 <div className="mb-0.5">
@@ -542,6 +556,13 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                       >
                         <span className="truncate">{group.name}</span>
                         <span className="text-xs text-muted-foreground">({visibleMembers.length})</span>
+                        {!isOpen && groupHasAttention && (
+                          <span
+                            role="status"
+                            aria-label="组内有新回复"
+                            className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500"
+                          />
+                        )}
                       </button>
                     )}
                     <button
