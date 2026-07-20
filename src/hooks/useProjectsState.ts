@@ -447,8 +447,40 @@ export function useProjectsState({
     sessionLookupRef.current = null;
   }, [sessionId]);
 
+  // Suppress the unread-reply dot during the initial load and for a few seconds
+  // after each websocket reconnect. Those moments deliver a burst of
+  // `session_upserted` / replayed events that are NOT genuine new replies — left
+  // ungated they would light up the dot on sessions the user never opened
+  // (every server restart = a reconnect = a burst).
+  const attentionArmedRef = useRef(false);
+  const attentionArmTimerRef = useRef<number | null>(null);
+  const scheduleAttentionArm = useCallback(() => {
+    attentionArmedRef.current = false;
+    if (attentionArmTimerRef.current) {
+      window.clearTimeout(attentionArmTimerRef.current);
+    }
+    attentionArmTimerRef.current = window.setTimeout(() => {
+      attentionArmedRef.current = true;
+      attentionArmTimerRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    scheduleAttentionArm();
+    return () => {
+      if (attentionArmTimerRef.current) {
+        window.clearTimeout(attentionArmTimerRef.current);
+      }
+    };
+  }, [scheduleAttentionArm]);
+
   const markSessionAttention = useCallback((targetSessionId?: string | null) => {
     if (!targetSessionId) {
+      return;
+    }
+
+    // Not armed yet (initial load / post-reconnect settle) — ignore.
+    if (!attentionArmedRef.current) {
       return;
     }
 
@@ -682,6 +714,12 @@ export function useProjectsState({
   // "suppress updates while a run is active" protection is needed anymore.
   useEffect(() => {
     const handleEvent = (event: ServerEvent) => {
+      // A reconnect replays a burst of upserts/events — re-arm the settle window
+      // so those don't get mistaken for new replies.
+      if (event.kind === 'websocket_reconnected') {
+        scheduleAttentionArm();
+      }
+
       if (event.kind === 'loading_progress') {
         if (loadingProgressTimeoutRef.current) {
           clearTimeout(loadingProgressTimeoutRef.current);
@@ -738,7 +776,12 @@ export function useProjectsState({
         && !activeSessionsRef.current.has(upsert.sessionId)
       ) {
         setExternalMessageUpdate((prev) => prev + 1);
-      } else {
+      } else if (activeSessionsRef.current.has(upsert.sessionId)) {
+        // Only a disk upsert for a session THIS client knows was running counts
+        // as a new reply. Metadata/title/re-index writes (which also bump the
+        // file mtime and fire `session_upserted`) must NOT light the dot — that
+        // was flagging sessions the user never opened. Genuine background replies
+        // still get flagged via the live-event path above.
         markSessionAttention(upsert.sessionId);
       }
 
@@ -825,7 +868,7 @@ export function useProjectsState({
     };
 
     return subscribe(handleEvent);
-  }, [markSessionAttention, navigate, sessionId, subscribe]);
+  }, [markSessionAttention, navigate, scheduleAttentionArm, sessionId, subscribe]);
 
   useEffect(() => {
     return () => {
