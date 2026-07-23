@@ -66,6 +66,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   const { t } = useTranslation('chat');
   const { isDarkMode } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const raw = Array.isArray(children) ? children.join('') : String(children ?? '');
   const looksMultiline = /[\r\n]/.test(raw);
   const inlineDetected = inline || (node && node.type === 'inlineCode');
@@ -85,6 +86,12 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
 
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : 'text';
+
+  // Long code blocks / scripts collapse to a preview with a "show all" toggle so
+  // a single message can't dump hundreds of lines into the transcript.
+  const lineCount = raw.split('\n').length;
+  const collapsible = lineCount > 18;
+  const collapsed = collapsible && !expanded;
 
   return (
     <div className="group relative my-2">
@@ -136,27 +143,41 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
         )}
       </button>
 
-      <SyntaxHighlighter
-        language={language}
-        style={isDarkMode ? oneDark : oneLight}
-        customStyle={{
-          margin: 0,
-          borderRadius: '0.75rem',
-          fontSize: '0.875rem',
-          padding: language && language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
-          // ChatGPT-style soft grey block in light mode; keep oneDark's own bg in dark.
-          ...(isDarkMode ? {} : { background: 'hsl(var(--muted))' }),
-        }}
-        codeTagProps={{
-          style: {
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-            ...(isDarkMode ? {} : { background: 'transparent' }),
-          },
-        }}
-      >
-        {raw}
-      </SyntaxHighlighter>
+      <div className={collapsed ? 'relative max-h-72 overflow-hidden' : undefined}>
+        <SyntaxHighlighter
+          language={language}
+          style={isDarkMode ? oneDark : oneLight}
+          customStyle={{
+            margin: 0,
+            borderRadius: '0.75rem',
+            fontSize: '0.875rem',
+            padding: language && language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
+            // ChatGPT-style soft grey block in light mode; keep oneDark's own bg in dark.
+            ...(isDarkMode ? {} : { background: 'hsl(var(--muted))' }),
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              ...(isDarkMode ? {} : { background: 'transparent' }),
+            },
+          }}
+        >
+          {raw}
+        </SyntaxHighlighter>
+        {collapsed && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-muted to-transparent dark:from-gray-900" />
+        )}
+      </div>
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="mt-1 text-xs font-medium text-primary/80 hover:text-primary"
+        >
+          {expanded ? '收起' : `展开全部 ${lineCount} 行 ▾`}
+        </button>
+      )}
     </div>
   );
 };

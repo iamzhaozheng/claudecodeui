@@ -3,6 +3,7 @@ import { ChevronRight, Copy, Check } from 'lucide-react';
 
 import { cn } from '../../../../lib/utils';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
+
 import { ToolStatusBadge } from './ToolStatusBadge';
 import type { ToolStatus } from './ToolStatusBadge';
 
@@ -106,8 +107,13 @@ export const BashCommandDisplay: React.FC<BashCommandDisplayProps> = ({
             and render collapsed multi-line commands in full. */}
         <span
           className={cn(
-            'min-w-0 flex-1 font-mono text-xs text-foreground',
-            open ? 'whitespace-pre-wrap break-all' : 'truncate',
+            // A global `.chat-message code { white-space: pre-wrap !important }`
+            // rule (index.css) defeats Tailwind's `truncate`, so long commands
+            // (heredoc scripts, inline python, …) would flood the row. Always cap
+            // the height and scroll within it — compact when collapsed, taller
+            // when expanded.
+            'min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs text-foreground',
+            open ? 'max-h-80' : 'max-h-[3.25rem]',
           )}
         >
           {command}
