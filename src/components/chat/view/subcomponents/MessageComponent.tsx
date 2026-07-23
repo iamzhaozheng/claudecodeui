@@ -112,6 +112,38 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
     );
   }
 
+  // Context-compaction summary: when a conversation is compacted, Claude injects
+  // a long "This session is being continued…" recap. Collapse it like the skill
+  // row so it doesn't dump a wall of text the user never wrote.
+  if (message.isCompactSummary) {
+    const summary = String(message.content || '');
+    return (
+      <div ref={messageRef} className="chat-message px-3 sm:px-0">
+        <details className="group/compact">
+          <summary className="flex w-fit cursor-pointer select-none list-none items-center gap-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground/80 [&::-webkit-details-marker]:hidden">
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+              className="h-3 w-3 flex-shrink-0 transition-transform duration-150 group-open/compact:rotate-90"
+            >
+              <path d="M7 5l6 5-6 5V5z" />
+            </svg>
+            <span aria-hidden="true">🗂️</span>
+            <span>上下文已压缩 · 前情摘要</span>
+          </summary>
+          {summary.trim().length > 0 && (
+            <div className="ml-[18px] mt-1 max-h-96 overflow-auto rounded-md bg-muted/40 p-2">
+              <Markdown className="prose prose-sm max-w-none font-serif dark:prose-invert">
+                {summary}
+              </Markdown>
+            </div>
+          )}
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={messageRef}
