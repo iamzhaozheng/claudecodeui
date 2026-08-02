@@ -110,7 +110,11 @@ const generateToken = (user) => {
       username: user.username
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    // 30d (was 7d): REST requests slide this forward via X-Refreshed-Token, so
+    // an active user effectively never expires; the longer window just covers
+    // multi-day gaps so the WebSocket (which can't refresh mid-connection)
+    // doesn't silently fail after a week away.
+    { expiresIn: '30d' }
   );
 };
 
