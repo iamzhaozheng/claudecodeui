@@ -16,7 +16,7 @@ import { ChevronDown, ChevronRight, FolderPlus, GripVertical, MoreHorizontal, Pe
 
 import type { LLMProvider, Project, ProjectSession } from '../../../../types/app';
 import type { SessionWithProvider } from '../../types/types';
-import type { SessionGroupsController } from '../../hooks/useSessionGroups';
+import type { SessionGroupsController, SessionGroupMemberRef } from '../../hooks/useSessionGroups';
 
 import type { SidebarProjectListProps } from './SidebarProjectList';
 
@@ -348,6 +348,27 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     return { flatSessions: flat, byId: map };
   }, [projects]);
 
+  // Resolve a group member to a renderable entry. Prefer the fully-loaded
+  // session from the main list; otherwise synthesize a minimal entry from the
+  // server-provided member data (name/projectId/provider) so grouped sessions
+  // show even when the paginated main list hasn't loaded them (e.g. after a
+  // Codex import floods the recent list and pushes older grouped sessions off
+  // the first page). Clicking still navigates by id and hydrates the rest.
+  const memberToEntry = (m: SessionGroupMemberRef): SessionEntry => {
+    const existing = byId.get(m.sessionId);
+    if (existing) {
+      return existing;
+    }
+    return {
+      session: {
+        id: m.sessionId,
+        summary: m.name ?? '',
+        __provider: (m.provider as SessionWithProvider['__provider']) || 'claude',
+      } as SessionWithProvider,
+      project: { projectId: m.projectId ?? '' } as Project,
+    };
+  };
+
   const groupedIds = new Set(groups.flatMap((g) => g.members.map((m) => m.sessionId)));
   const ungroupedSessions = flatSessions.filter((entry) => !groupedIds.has(entry.session.id));
 
@@ -519,7 +540,10 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
             // Hide members whose session is archived/deleted/not-loaded so no
             // broken "会话 xxxx" placeholder appears; the membership stays in the
             // DB so a restored session returns to its group.
-            const visibleMembers = group.members.filter((m) => byId.has(m.sessionId));
+            // Show a member if the server says its session still exists, or if
+            // it's already in the loaded list (covers optimistic just-added rows
+            // before the next groups refresh). Only true orphans are hidden.
+            const visibleMembers = group.members.filter((m) => m.exists !== false || byId.has(m.sessionId));
             // When a group is collapsed, surface a dot on its header if any
             // conversation inside it has a new reply to follow up on.
             const groupHasAttention = visibleMembers.some((m) => attentionSessionIds.has(m.sessionId));
@@ -593,7 +617,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                       {visibleMembers.length === 0 && (
                         <p className="px-2 py-1 text-xs text-muted-foreground">空分组。把下面的对话拖进来。</p>
                       )}
-                      {visibleMembers.map((member) => renderRow(byId.get(member.sessionId)!, group.id))}
+                      {visibleMembers.map((member) => renderRow(memberToEntry(member), group.id))}
                     </div>
                   )}
                 </div>

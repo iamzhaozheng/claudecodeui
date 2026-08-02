@@ -7,6 +7,10 @@ export interface SessionGroupMemberRef {
   projectId: string | null;
   provider: string | null;
   position: number;
+  /** Display name resolved server-side; null for orphan (deleted) sessions. */
+  name?: string | null;
+  /** Whether the session still exists (not deleted/archived) server-side. */
+  exists?: boolean;
 }
 
 export interface SessionGroupData {

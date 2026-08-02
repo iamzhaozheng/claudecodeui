@@ -5,6 +5,13 @@ export type SessionGroupMember = {
   projectId: string | null;
   provider: string | null;
   position: number;
+  /**
+   * The member session's display name, resolved server-side so the groups view
+   * can render members whether or not the (paginated) main session list has
+   * loaded them. `null` when the session no longer exists (orphan membership).
+   */
+  name: string | null;
+  exists: boolean;
 };
 
 export type SessionGroup = {
@@ -21,6 +28,8 @@ type MemberRow = {
   project_id: string | null;
   provider: string | null;
   position: number;
+  custom_name: string | null;
+  session_exists: number;
 };
 
 export const sessionGroupsDb = {
@@ -32,7 +41,12 @@ export const sessionGroupsDb = {
       .all() as GroupRow[];
     const members = db
       .prepare(
-        'SELECT group_id, session_id, project_id, provider, position FROM session_group_members ORDER BY position ASC, rowid ASC',
+        `SELECT m.group_id, m.session_id, m.project_id, m.provider, m.position,
+                s.custom_name,
+                (s.session_id IS NOT NULL AND COALESCE(s.isArchived, 0) = 0) AS session_exists
+           FROM session_group_members m
+           LEFT JOIN sessions s ON s.session_id = m.session_id
+          ORDER BY m.position ASC, m.rowid ASC`,
       )
       .all() as MemberRow[];
 
@@ -44,6 +58,8 @@ export const sessionGroupsDb = {
         projectId: m.project_id,
         provider: m.provider,
         position: m.position,
+        name: m.custom_name && m.custom_name.trim() ? m.custom_name : null,
+        exists: Boolean(m.session_exists),
       });
       byGroup.set(m.group_id, list);
     }
