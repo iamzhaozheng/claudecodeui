@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
@@ -55,6 +55,13 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
       (prevMessage.type === 'error'));
   const messageRef = useRef<HTMLDivElement | null>(null);
   const userCopyContent = String(message.content || '');
+  const [userExpanded, setUserExpanded] = useState(false);
+  // Long user turns — often an auto-generated subagent task prompt rendered as a
+  // user bubble — collapse to a preview with a show-all toggle so they don't
+  // wall off the transcript.
+  const isLongUserMessage =
+    message.type === 'user'
+    && (userCopyContent.length > 600 || userCopyContent.split('\n').length > 12);
   const formattedMessageContent = useMemo(
     () => formatUsageLimitText(String(message.content || '')),
     [message.content]
@@ -165,14 +172,31 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
               <div className="group max-w-full rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:px-4">
-                <div dir="auto" className="break-words font-serif text-sm">
+                <div
+                  dir="auto"
+                  className={`relative break-words font-serif text-sm ${
+                    isLongUserMessage && !userExpanded ? 'max-h-40 overflow-hidden' : ''
+                  }`}
+                >
                   <Markdown
                     breaks
                     className="prose prose-sm prose-invert max-w-none font-serif [&_a]:text-blue-100 [&_a]:underline"
                   >
                     {message.content}
                   </Markdown>
+                  {isLongUserMessage && !userExpanded && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-blue-600 to-transparent" />
+                  )}
                 </div>
+                {isLongUserMessage && (
+                  <button
+                    type="button"
+                    onClick={() => setUserExpanded((prev) => !prev)}
+                    className="mt-1 text-xs font-medium text-blue-100 underline-offset-2 hover:underline"
+                  >
+                    {userExpanded ? '收起' : '展开全部'}
+                  </button>
+                )}
                 <div className="mt-1 flex items-center justify-end gap-1 text-xs text-blue-100">
                   {shouldShowUserCopyControl && (
                     <MessageCopyControl content={userCopyContent} messageType="user" />
