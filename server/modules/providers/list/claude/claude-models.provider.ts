@@ -199,6 +199,15 @@ const extractClaudeModelFromMessageContent = (content: unknown): string | null =
   return null;
 };
 
+// The inference gateway can tag responses with a placeholder model such as
+// `<synthetic>` (used for synthetic/no-op turns). It must never be treated as
+// the session's active model: echoing it back as the request model makes the
+// gateway reject the run with "unknown provider for model <synthetic>" (502).
+const isPlaceholderModel = (model: string): boolean => {
+  const trimmed = model.trim();
+  return /^<.*>$/.test(trimmed) || trimmed.toLowerCase() === 'synthetic';
+};
+
 const readClaudeSessionModelFromJsonl = async (
   sessionId: string,
   jsonlPath: string,
@@ -213,7 +222,7 @@ const readClaudeSessionModelFromJsonl = async (
     try {
       const event = JSON.parse(lines[index]) as ClaudeInitEvent;
       const model = extractClaudeEventModel(event, sessionId);
-      if (model) {
+      if (model && !isPlaceholderModel(model)) {
         return { model };
       }
     } catch {
