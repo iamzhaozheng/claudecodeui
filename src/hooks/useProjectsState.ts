@@ -678,13 +678,44 @@ export function useProjectsState({
     void hydrateProjectTaskMaster(selectedProject.projectId);
   }, [hydrateProjectTaskMaster, selectedProject?.projectId]);
 
-  // On first load with no session in the URL, jump straight to the most recently
-  // active session across all projects (so opening the app doesn't land on a
-  // blank page). Runs once per mount; if there are no sessions yet, fall back to
-  // auto-selecting the single project's new-session page.
+  // Remember the session the user actually has open in THIS web UI, so the next
+  // launch can return to it. `lastActivity` is unreliable for this because
+  // background processes (other CLIs / agents / cmux) touch old session files
+  // and bump their activity — landing on a stale conversation the user never
+  // opened. The last-viewed id is the honest "where was I" signal.
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+    try {
+      window.localStorage.setItem('cloudcli:last-viewed-session', sessionId);
+    } catch {
+      /* localStorage unavailable — non-fatal */
+    }
+  }, [sessionId]);
+
+  // On first load with no session in the URL, return to the session the user
+  // last had open here; if that's gone, fall back to the most recently active
+  // session. Runs once per mount; with no sessions at all, auto-select the
+  // single project's new-session page.
   const didAutoLandRef = useRef(false);
   useEffect(() => {
     if (didAutoLandRef.current || isLoadingProjects || sessionId || selectedProject) {
+      return;
+    }
+
+    const sessionExists = (id: string) =>
+      projects.some((project) => (project.sessions ?? []).some((session) => String(session.id) === id));
+
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem('cloudcli:last-viewed-session');
+    } catch {
+      saved = null;
+    }
+    if (saved && sessionExists(saved)) {
+      didAutoLandRef.current = true;
+      navigate(`/session/${saved}`, { replace: true });
       return;
     }
 
