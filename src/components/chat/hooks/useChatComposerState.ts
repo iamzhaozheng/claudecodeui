@@ -558,7 +558,90 @@ export function useChatComposerState({
     lastAutosizedInputRef.current = target.value;
   }, []);
 
+  // iPhone photos are HEIC/HEIF, which browsers can't decode and Claude can't
+  // read. Convert them to JPEG before attaching; fall back to the original on
+  // any failure.
+  const maybeConvertHeic = useCallback(async (file: File): Promise<File> => {
+    const isHeic = /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name || '');
+    if (!isHeic) return file;
+    try {
+      const heic2any = (await import('heic2any')).default;
+      const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      const blob = (Array.isArray(out) ? out[0] : out) as Blob;
+      const name = (file.name || 'image').replace(/\.[^.]+$/, '') + '.jpg';
+      return new File([blob], name, { type: 'image/jpeg' });
+    } catch (error) {
+      console.error('HEIC conversion failed:', error);
+      return file;
+    }
+  }, []);
+
+  // Downscale/re-encode an image before attaching so a 5MB screenshot uploads as
+  // a few hundred KB. 1600px is lossless for Claude vision. Falls back to the
+  // original on any error.
+  const compressImage = useCallback((file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      try {
+        if (!file.type || !file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') {
+          resolve(file);
+          return;
+        }
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            URL.revokeObjectURL(url);
+            const MAX = 1600;
+            let width = img.width;
+            let height = img.height;
+            if (width > MAX || height > MAX) {
+              const scale = Math.min(MAX / width, MAX / height);
+              width = Math.round(width * scale);
+              height = Math.round(height * scale);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(file);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              (blob) => {
+                if (blob && blob.size < file.size) {
+                  const name = (file.name || 'image').replace(/\.[^.]+$/, '') + '.jpg';
+                  resolve(new File([blob], name, { type: 'image/jpeg' }));
+                } else {
+                  resolve(file);
+                }
+              },
+              'image/jpeg',
+              0.82,
+            );
+          } catch {
+            resolve(file);
+          }
+        };
+        img.onerror = () => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            /* noop */
+          }
+          resolve(file);
+        };
+        img.src = url;
+      } catch {
+        resolve(file);
+      }
+    });
+  }, []);
+
   const handleAttachmentFiles = useCallback((files: File[]) => {
+    const isImageFile = (file: File) =>
+      Boolean(file.type?.startsWith('image/')) || /\.hei[cf]$/i.test(file.name || '');
     const validFiles = files.filter((file) => {
       try {
         if (!file || typeof file !== 'object') {
@@ -566,11 +649,13 @@ export function useChatComposerState({
           return false;
         }
 
-        if (file.size > MAX_ATTACHMENT_SIZE) {
+        // Images get downscaled/re-encoded below, so allow larger originals.
+        const limit = isImageFile(file) ? 25 * 1024 * 1024 : MAX_ATTACHMENT_SIZE;
+        if (file.size > limit) {
           const fileName = file.name || 'Unknown file';
           setFileErrors((previous) => {
             const next = new Map(previous);
-            next.set(fileName, 'File too large (max 10MB)');
+            next.set(fileName, isImageFile(file) ? 'Image too large (max 25MB)' : 'File too large (max 10MB)');
             return next;
           });
           return false;
@@ -583,10 +668,22 @@ export function useChatComposerState({
       }
     });
 
-    if (validFiles.length > 0) {
-      setAttachedFiles((previous) => [...previous, ...validFiles].slice(0, MAX_ATTACHMENT_COUNT));
+    if (validFiles.length === 0) {
+      return;
     }
-  }, []);
+
+    // Convert HEIC→JPEG and compress images before attaching; non-images pass
+    // through untouched.
+    Promise.all(
+      validFiles.map(async (file) => {
+        if (!isImageFile(file)) return file;
+        const converted = await maybeConvertHeic(file);
+        return compressImage(converted);
+      }),
+    ).then((processed) => {
+      setAttachedFiles((previous) => [...previous, ...processed].slice(0, MAX_ATTACHMENT_COUNT));
+    });
+  }, [maybeConvertHeic, compressImage]);
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLTextAreaElement>) => {

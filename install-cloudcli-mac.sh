@@ -82,7 +82,7 @@ cat > "$HOME/Library/LaunchAgents/$LABEL.plist" <<PLIST
   <key>ProgramArguments</key><array>
     <string>/usr/bin/caffeinate</string><string>-s</string>
     <string>$NODE_BIN</string>
-    <string>$INSTALL_DIR/dist-server/server/cli.js</string>
+    <string>$INSTALL_DIR/dist-server/server/index.js</string>
     <string>--port</string><string>$PORT</string>
   </array>
   <key>EnvironmentVariables</key><dict>
