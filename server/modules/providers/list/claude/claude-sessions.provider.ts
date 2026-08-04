@@ -370,6 +370,34 @@ export class ClaudeSessionsProvider implements IProviderSessions {
       }
     }
 
+    // Context-compaction summaries are stored as synthetic "user" rows, and the
+    // content can be a plain string OR an array of text blocks. The string-only
+    // path further below misses the array form (leaving it to render as a giant
+    // blue user bubble), so detect it up front and emit it as an
+    // assistant-authored, foldable summary regardless of content shape.
+    if (raw.message?.role === 'user' && raw.isCompactSummary === true) {
+      const content = raw.message?.content;
+      const summaryText = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+            .map((part) => (part && typeof part === 'object' && part.type === 'text' ? String(part.text || '') : ''))
+            .join('')
+          : '';
+      if (summaryText.trim()) {
+        return [createNormalizedMessage({
+          id: baseId,
+          sessionId,
+          timestamp: ts,
+          provider: PROVIDER,
+          kind: 'text',
+          role: 'assistant',
+          content: summaryText,
+          isCompactSummary: true,
+        })];
+      }
+    }
+
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
       if (Array.isArray(raw.message.content)) {
         // Image attachments sent through the SDK are persisted as base64
