@@ -312,6 +312,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
     addSessionToGroup,
     removeSessionFromGroup,
     createSessionInGroup,
+    refreshGroups,
   } = sessionGroups;
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -368,6 +369,17 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
       project: { projectId: m.projectId ?? '' } as Project,
     };
   };
+
+  // Group members carry a server-side `exists` flag, but the cached group list
+  // goes stale when a session is archived/deleted. Re-fetch groups whenever the
+  // set of loaded sessions changes so archived/removed members drop out.
+  const sessionIdSignature = useMemo(
+    () => projects.flatMap((p) => (p.sessions ?? []).map((s) => s.id)).sort().join(','),
+    [projects],
+  );
+  useEffect(() => {
+    void refreshGroups();
+  }, [sessionIdSignature, refreshGroups]);
 
   const groupedIds = new Set(groups.flatMap((g) => g.members.map((m) => m.sessionId)));
   const ungroupedSessions = flatSessions.filter((entry) => !groupedIds.has(entry.session.id));
@@ -543,7 +555,13 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
             // Show a member if the server says its session still exists, or if
             // it's already in the loaded list (covers optimistic just-added rows
             // before the next groups refresh). Only true orphans are hidden.
-            const visibleMembers = group.members.filter((m) => m.exists !== false || byId.has(m.sessionId));
+            // Hide members the server says are gone (archived/deleted →
+            // exists:false), even if a stale copy is still in the loaded list.
+            // `byId` is only a fallback for optimistic just-added rows whose
+            // exists flag hasn't been reported by the server yet.
+            const visibleMembers = group.members.filter(
+              (m) => m.exists !== false && (m.exists === true || byId.has(m.sessionId)),
+            );
             // When a group is collapsed, surface a dot on its header if any
             // conversation inside it has a new reply to follow up on.
             const groupHasAttention = visibleMembers.some((m) => attentionSessionIds.has(m.sessionId));
