@@ -99,6 +99,35 @@ export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
       },
     },
     {
+      value: 'claude-opus-5',
+      label: 'Opus 5',
+      description: 'Opus 5 · latest, most capable Opus (served by your gateway)',
+      effort: {
+        default: 'high',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'xhigh' },
+          { value: 'max' },
+        ],
+      },
+    },
+    {
+      value: 'claude-sonnet-5',
+      label: 'Sonnet 5',
+      description: 'Sonnet 5 · latest Sonnet (served by your gateway)',
+      effort: {
+        default: 'high',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'max' },
+        ],
+      },
+    },
+    {
       value: 'haiku',
       label: 'Haiku',
       description: 'Haiku 4.5 · Fastest for quick answers · $1/$5 per Mtok',
