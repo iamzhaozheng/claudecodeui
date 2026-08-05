@@ -130,10 +130,15 @@ export function useChatSessionState({
   const isLoadingMoreRef = useRef(false);
   const allMessagesLoadedRef = useRef(false);
   const topLoadLockRef = useRef(false);
+  const lastTopLoadAtRef = useRef(0);
   const pendingScrollRestoreRef = useRef<ScrollRestoreState | null>(null);
   const pendingInitialScrollRef = useRef(true);
   const messagesOffsetRef = useRef(0);
-  const scrollPositionRef = useRef({ height: 0, top: 0 });
+  // Mirror of isUserScrolledUp read inside the content-growth effect. Keeping it
+  // in a ref (instead of the effect's dep array) means a plain user scroll no
+  // longer re-runs that effect and mutates scrollTop — which was yanking the
+  // viewport to a mid-list position on the first scroll after a refresh.
+  const isUserScrolledUpRef = useRef(false);
   const loadAllFinishedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadAllOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoadedSessionKeyRef = useRef<string | null>(null);
@@ -381,6 +386,7 @@ export function useChatSessionState({
     if (!container) return;
 
     const nearBottom = isNearBottom();
+    isUserScrolledUpRef.current = !nearBottom;
     setIsUserScrolledUp(!nearBottom);
 
     const scrolledNearTop = container.scrollTop < 100;
@@ -404,11 +410,24 @@ export function useChatSessionState({
     if (!allMessagesLoadedRef.current) {
       if (!scrolledNearTop) { topLoadLockRef.current = false; return; }
       if (topLoadLockRef.current) {
-        if (container.scrollTop > 20) topLoadLockRef.current = false;
-        return;
+        // Normally the lock releases once the post-load scroll-anchor restore
+        // has pushed the user away from the very top (scrollTop > 20). But on
+        // iOS the momentum scroll can ignore our programmatic scrollTop, leaving
+        // the user pinned at scrollTop ~0 with the lock still engaged — every
+        // further scroll then returns here and no older page ever loads
+        // ("can't load more" at the top). A time-based fallback guarantees the
+        // lock always frees so paging can continue even when the restore fails.
+        if (container.scrollTop > 20 || Date.now() - lastTopLoadAtRef.current > 600) {
+          topLoadLockRef.current = false;
+        } else {
+          return;
+        }
       }
       const didLoad = await loadOlderMessages(container);
-      if (didLoad) topLoadLockRef.current = true;
+      if (didLoad) {
+        topLoadLockRef.current = true;
+        lastTopLoadAtRef.current = Date.now();
+      }
     }
   }, [hasMoreMessages, isNearBottom, loadOlderMessages]);
 
@@ -430,6 +449,7 @@ export function useChatSessionState({
     topLoadLockRef.current = false;
     pendingScrollRestoreRef.current = null;
     wasNearTopRef.current = false;
+    isUserScrolledUpRef.current = false;
     setIsUserScrolledUp(false);
   }, [selectedProject?.projectId, selectedSession?.id]);
 
@@ -733,29 +753,28 @@ export function useChatSessionState({
     return chatMessages.slice(-visibleMessageCount);
   }, [chatMessages, visibleMessageCount]);
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    scrollPositionRef.current = { height: container.scrollHeight, top: container.scrollTop };
-  });
-
+  // Follow new content ONLY while the user is already parked at the bottom.
+  //
+  // New messages are appended below the viewport, so a user reading in the
+  // middle needs no correction at all — the browser keeps their scrollTop. The
+  // old version tried to "compensate" here with scrollTop = prevTop + heightDiff
+  // against a per-render height snapshot, which dragged the view downward on
+  // every growth and, because isUserScrolledUp was in the deps, fired on the
+  // user's own scroll gesture — that was the jump-to-the-middle on the first
+  // scroll after a refresh. Scroll state is read from a ref so this effect
+  // reacts to content changes only.
+  //
+  // Prepending older messages DOES shift content and is compensated separately
+  // by the pendingScrollRestoreRef layout effect above.
   useEffect(() => {
     if (!scrollContainerRef.current || chatMessages.length === 0) return;
+    if (pendingInitialScrollRef.current) return; // initial rAF pin owns the scroll
     if (isLoadingMoreRef.current || isLoadingMoreMessages || pendingScrollRestoreRef.current) return;
     if (searchScrollActiveRef.current) return;
+    if (isUserScrolledUpRef.current) return; // reading history — leave the viewport alone
 
-    if (!isUserScrolledUp) {
-      setTimeout(() => scrollToBottom(), 50);
-      return;
-    }
-
-    const container = scrollContainerRef.current;
-    const prevHeight = scrollPositionRef.current.height;
-    const prevTop = scrollPositionRef.current.top;
-    const newHeight = container.scrollHeight;
-    const heightDiff = newHeight - prevHeight;
-    if (heightDiff > 0 && prevTop > 0) container.scrollTop = prevTop + heightDiff;
-  }, [chatMessages.length, isLoadingMoreMessages, isUserScrolledUp, scrollToBottom]);
+    setTimeout(() => scrollToBottom(), 50);
+  }, [chatMessages.length, isLoadingMoreMessages, scrollToBottom]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
