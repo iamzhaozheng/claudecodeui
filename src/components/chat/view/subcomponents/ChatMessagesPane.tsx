@@ -20,6 +20,7 @@ import ChatExportMenu from './ChatExportMenu';
 
 interface ChatMessagesPaneProps {
   scrollContainerRef: RefObject<HTMLDivElement>;
+  loadMoreSentinelRef: RefObject<HTMLDivElement>;
   onWheel: () => void;
   onTouchMove: () => void;
   isLoadingSessionMessages: boolean;
@@ -50,7 +51,6 @@ interface ChatMessagesPaneProps {
   isLoadingMoreMessages: boolean;
   hasMoreMessages: boolean;
   totalMessages: number;
-  sessionMessagesCount: number;
   visibleMessageCount: number;
   visibleMessages: ChatMessage[];
   loadEarlierMessages: () => void;
@@ -70,6 +70,7 @@ interface ChatMessagesPaneProps {
 
 function ChatMessagesPane({
   scrollContainerRef,
+  loadMoreSentinelRef,
   onWheel,
   onTouchMove,
   isLoadingSessionMessages,
@@ -98,7 +99,6 @@ function ChatMessagesPane({
   isLoadingMoreMessages,
   hasMoreMessages,
   totalMessages,
-  sessionMessagesCount,
   visibleMessageCount,
   visibleMessages,
   loadEarlierMessages,
@@ -214,16 +214,11 @@ function ChatMessagesPane({
             </div>
           )}
 
-          {/* Indicator showing there are more messages to load (hide when all loaded) */}
-          {hasMoreMessages && !isLoadingMoreMessages && !allMessagesLoaded && (
-            <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              {totalMessages > 0 && (
-                <span>
-                  {t('session.messages.showingOf', { shown: sessionMessagesCount, total: totalMessages })}{' '}
-                  <span className="text-xs">{t('session.messages.scrollToLoad')}</span>
-                </span>
-              )}
-            </div>
+          {/* Sentinel: whenever this scrolls into view, the next page of older
+              messages is fetched automatically, so reaching the top just keeps
+              scrolling instead of stopping at a "load more" prompt. */}
+          {hasMoreMessages && !allMessagesLoaded && (
+            <div ref={loadMoreSentinelRef} aria-hidden className="h-px w-full" />
           )}
 
           <LoadAllMessagesOverlay

@@ -128,14 +128,13 @@ export function useChatSessionState({
   const [viewHiddenCount, setViewHiddenCount] = useState(0);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const wasNearTopRef = useRef(false);
   const [searchTarget, setSearchTarget] = useState<{ timestamp?: string; uuid?: string; snippet?: string } | null>(null);
   const searchScrollActiveRef = useRef(false);
   const isLoadingSessionRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
   const allMessagesLoadedRef = useRef(false);
-  const topLoadLockRef = useRef(false);
-  const lastTopLoadAtRef = useRef(0);
   const pendingScrollRestoreRef = useRef<ScrollRestoreState | null>(null);
   const pendingInitialScrollRef = useRef(true);
   const messagesOffsetRef = useRef(0);
@@ -200,7 +199,6 @@ export function useChatSessionState({
     setSearchTarget(null);
     wasNearTopRef.current = false;
     searchScrollActiveRef.current = false;
-    topLoadLockRef.current = false;
     pendingScrollRestoreRef.current = null;
     pendingInitialScrollRef.current = true;
     lastLoadedSessionKeyRef.current = null;
@@ -412,29 +410,63 @@ export function useChatSessionState({
       wasNearTopRef.current = false;
     }
 
-    if (!allMessagesLoadedRef.current) {
-      if (!scrolledNearTop) { topLoadLockRef.current = false; return; }
-      if (topLoadLockRef.current) {
-        // Normally the lock releases once the post-load scroll-anchor restore
-        // has pushed the user away from the very top (scrollTop > 20). But on
-        // iOS the momentum scroll can ignore our programmatic scrollTop, leaving
-        // the user pinned at scrollTop ~0 with the lock still engaged — every
-        // further scroll then returns here and no older page ever loads
-        // ("can't load more" at the top). A time-based fallback guarantees the
-        // lock always frees so paging can continue even when the restore fails.
-        if (container.scrollTop > 20 || Date.now() - lastTopLoadAtRef.current > 600) {
-          topLoadLockRef.current = false;
-        } else {
-          return;
+    // Loading older pages is driven by the top sentinel + IntersectionObserver
+    // below, not by this scroll handler. The old threshold+lock scheme required
+    // the user to re-trigger a fresh "near the top" scroll for every page, so
+    // once you were already parked at the top nothing more would ever load.
+  }, [hasMoreMessages, isNearBottom]);
+
+  // Auto-load older messages whenever the top sentinel becomes visible, and
+  // keep going while it stays visible — so scrolling to the top continuously
+  // pulls in history instead of stopping at a prompt.
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    const container = scrollContainerRef.current;
+    if (!sentinel || !container) return;
+    if (!hasMoreMessages || allMessagesLoaded) return;
+
+    let cancelled = false;
+    let pumping = false;
+
+    // Keep fetching while the sentinel is still on screen: one page often
+    // isn't tall enough to push it out of view, and waiting for another
+    // scroll event in that state is exactly what used to stall paging.
+    const pump = async () => {
+      if (pumping || cancelled) return;
+      pumping = true;
+      try {
+        while (!cancelled) {
+          const didLoad = await loadOlderMessages(container);
+          if (!didLoad) break;
+          // Let the prepend paint (and the scroll anchor restore) before
+          // deciding whether the sentinel is still visible.
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          if (cancelled) break;
+          const rect = sentinel.getBoundingClientRect();
+          const bounds = container.getBoundingClientRect();
+          const stillVisible = rect.bottom >= bounds.top && rect.top <= bounds.bottom;
+          if (!stillVisible) break;
         }
+      } finally {
+        pumping = false;
       }
-      const didLoad = await loadOlderMessages(container);
-      if (didLoad) {
-        topLoadLockRef.current = true;
-        lastTopLoadAtRef.current = Date.now();
-      }
-    }
-  }, [hasMoreMessages, isNearBottom, loadOlderMessages]);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void pump();
+      },
+      // Start a little before the sentinel is actually reached so history is
+      // already arriving by the time the user hits the top.
+      { root: container, rootMargin: '400px 0px 0px 0px', threshold: 0 },
+    );
+    observer.observe(sentinel);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [hasMoreMessages, allMessagesLoaded, loadOlderMessages, chatMessages.length]);
 
   useLayoutEffect(() => {
     if (!pendingScrollRestoreRef.current || !scrollContainerRef.current) return;
@@ -451,7 +483,6 @@ export function useChatSessionState({
       pendingInitialScrollRef.current = true;
       setVisibleMessageCount(INITIAL_VISIBLE_MESSAGES);
     }
-    topLoadLockRef.current = false;
     pendingScrollRestoreRef.current = null;
     wasNearTopRef.current = false;
     isUserScrolledUpRef.current = false;
@@ -880,6 +911,7 @@ export function useChatSessionState({
     showLoadAllOverlay,
     createDiff,
     scrollContainerRef,
+    loadMoreSentinelRef,
     scrollToBottom,
     scrollToBottomAndReset,
     isNearBottom,

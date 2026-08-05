@@ -119,6 +119,7 @@ function ChatInterface({
     showLoadAllOverlay,
     createDiff,
     scrollContainerRef,
+    loadMoreSentinelRef,
     scrollToBottom,
     scrollToBottomAndReset,
     handleScroll,
@@ -331,6 +332,7 @@ function ChatInterface({
       <div className="flex h-full min-h-0 flex-col">
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
+          loadMoreSentinelRef={loadMoreSentinelRef}
           onWheel={handleScroll}
           onTouchMove={handleScroll}
           isLoadingSessionMessages={isLoadingSessionMessages}
@@ -359,7 +361,6 @@ function ChatInterface({
           isLoadingMoreMessages={isLoadingMoreMessages}
           hasMoreMessages={hasMoreMessages}
           totalMessages={totalMessages}
-          sessionMessagesCount={chatMessages.length}
           visibleMessageCount={visibleMessageCount}
           visibleMessages={visibleMessages}
           loadEarlierMessages={loadEarlierMessages}
