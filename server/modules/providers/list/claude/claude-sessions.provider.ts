@@ -328,6 +328,21 @@ function stripAnsiFormatting(text: string): string {
   return text.replace(/\u001B\[[0-9;?]*[ -/]*[@-~]/g, '');
 }
 
+/**
+ * Normalized-transcript cache, keyed by session id and invalidated on the
+ * JSONL's mtime/size. Paging a long conversation issues one request per page,
+ * and every one of those used to re-read and re-normalize the entire file —
+ * ~10MB and 1400+ messages for a long-running session, per page. Caching the
+ * normalized array makes page 2..N a slice instead of a full re-parse.
+ */
+const historyCache = new Map<string, {
+  mtimeMs: number;
+  size: number;
+  normalized: NormalizedMessage[];
+  total: number;
+}>();
+const HISTORY_CACHE_MAX_ENTRIES = 8;
+
 export class ClaudeSessionsProvider implements IProviderSessions {
   /**
    * Normalizes one Claude JSONL entry or live SDK stream event into the shared
@@ -689,6 +704,34 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     const { limit = null, offset = 0 } = options;
     const providerSessionId = options.providerSessionId ?? sessionId;
 
+    // Reuse the normalized transcript while the JSONL is untouched, so paging
+    // back through a long session doesn't re-parse the whole file per page.
+    const jsonlPath = sessionsDb.getSessionById(sessionId)?.jsonl_path;
+    let cacheKey: string | null = null;
+    let stat: { mtimeMs: number; size: number } | null = null;
+    if (jsonlPath) {
+      try {
+        const s = await fsp.stat(jsonlPath);
+        cacheKey = `${sessionId}:${providerSessionId}`;
+        stat = { mtimeMs: s.mtimeMs, size: s.size };
+        const cached = historyCache.get(cacheKey);
+        if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+          const normalizedOffset = Math.max(0, offset);
+          const normalizedLimit = limit === null ? null : Math.max(0, limit);
+          const sliced = sliceTailPage(cached.normalized, normalizedLimit, normalizedOffset);
+          return {
+            messages: sliced.page,
+            total: cached.total,
+            hasMore: sliced.hasMore,
+            offset: normalizedOffset,
+            limit: normalizedLimit,
+          };
+        }
+      } catch {
+        // Stat failed (file vanished mid-run): fall through to a live read.
+      }
+    }
+
     let result: ClaudeHistoryResult;
     try {
       // Load full history first so `total` reflects frontend-normalized messages,
@@ -747,6 +790,17 @@ export class ClaudeSessionsProvider implements IProviderSessions {
         total += 1;
       }
     }
+    if (cacheKey && stat) {
+      // Bound the cache: a handful of recently-viewed sessions is all the
+      // paging path needs, and these arrays can be large.
+      if (historyCache.size >= HISTORY_CACHE_MAX_ENTRIES) {
+        const oldest = historyCache.keys().next().value;
+        if (oldest !== undefined) historyCache.delete(oldest);
+      }
+      historyCache.delete(cacheKey);
+      historyCache.set(cacheKey, { ...stat, normalized, total });
+    }
+
     const normalizedOffset = Math.max(0, offset);
     const normalizedLimit = limit === null ? null : Math.max(0, limit);
     const { page, hasMore } = sliceTailPage(normalized, normalizedLimit, normalizedOffset);

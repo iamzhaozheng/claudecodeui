@@ -10,7 +10,12 @@ import { createCachedDiffCalculator, type DiffCalculator } from '../utils/messag
 
 import { normalizedToChatMessages } from './useChatMessages';
 
-const MESSAGES_PER_PAGE = 20;
+// The first page stays small so a big session paints quickly; scrolling up
+// then pulls larger pages. At 20 per page a long session (1400+ messages)
+// needed ~70 scroll-and-wait rounds to reach the start, each one a full
+// network round trip — which reads as "scrolling to the top does nothing".
+const INITIAL_PAGE_SIZE = 20;
+const MESSAGES_PER_PAGE = 50;
 const INITIAL_VISIBLE_MESSAGES = 100;
 
 interface UseChatSessionStateArgs {
@@ -578,7 +583,7 @@ export function useChatSessionState({
     // Fetch from server → store updates → chatMessages re-derives automatically
     setIsLoadingSessionMessages(true);
     sessionStore.fetchFromServer(selectedSessionId, {
-      limit: MESSAGES_PER_PAGE,
+      limit: INITIAL_PAGE_SIZE,
       offset: 0,
     }).then(slot => {
       if (slot) {
