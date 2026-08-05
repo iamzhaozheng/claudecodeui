@@ -387,6 +387,11 @@ const STALE_THRESHOLD_MS = 30_000;
 
 const MAX_REALTIME_MESSAGES = 500;
 
+// Smallest tail window `refreshFromServer` will re-fetch. Matches the chat
+// view's initial page size so a refresh on a freshly-opened session keeps at
+// least the first page loaded (and `hasMore` describing older history).
+const REFRESH_MIN_WINDOW = 20;
+
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useSessionStore() {
@@ -582,7 +587,17 @@ export function useSessionStore() {
     const slot = getSlot(sessionId);
     const fetchTicket = ++slot._fetchSeq;
     try {
-      const url = `/api/providers/sessions/${encodeURIComponent(sessionId)}/messages`;
+      // Refresh only the tail window the user currently has loaded, so
+      // `hasMore`/`offset` keep describing the older history that is still
+      // pageable. A bare (no-limit) request returns the FULL transcript with
+      // hasMore=false; whenever a background disk upsert (re-index / CLI edit)
+      // fired this right after a session switch, that silently killed
+      // "scroll up to load more" until the upsert storm subsided minutes later.
+      const windowSize = Math.max(slot.serverMessages.length, REFRESH_MIN_WINDOW);
+      const params = new URLSearchParams();
+      params.append('limit', String(windowSize));
+      params.append('offset', '0');
+      const url = `/api/providers/sessions/${encodeURIComponent(sessionId)}/messages?${params.toString()}`;
       const response = await authenticatedFetch(url);
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -600,6 +615,9 @@ export function useSessionStore() {
       slot.serverMessages = data.messages || [];
       slot.total = data.total ?? slot.serverMessages.length;
       slot.hasMore = Boolean(data.hasMore);
+      // Keep offset in step with the refreshed window so the next scroll-up
+      // (fetchMore) asks for the page just older than what's now loaded.
+      slot.offset = slot.serverMessages.length;
       slot.fetchedAt = Date.now();
       // Only drop realtime rows the server transcript now owns. A blind clear
       // here caused the chat pane to flash "Continue your conversation" after
