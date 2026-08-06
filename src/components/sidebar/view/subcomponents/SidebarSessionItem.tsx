@@ -5,6 +5,7 @@ import type { TFunction } from 'i18next';
 import { Badge, Tooltip, buttonVariants } from '../../../../shared/view/ui';
 import { cn } from '../../../../lib/utils';
 import type { Project, ProjectSession, LLMProvider } from '../../../../types/app';
+import { isImeComposingReact } from '../../../../utils/ime';
 import type { SessionWithProvider } from '../../types/types';
 import { createSessionViewModel } from '../../utils/utils';
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
@@ -286,6 +287,7 @@ export default function SidebarSessionItem({
                   onChange={(event) => onEditingSessionNameChange(event.target.value)}
                   onKeyDown={(event) => {
                     event.stopPropagation();
+                    if (isImeComposingReact(event)) return;
                     if (event.key === 'Enter') {
                       saveEditedSession();
                     } else if (event.key === 'Escape') {

@@ -6,6 +6,7 @@ import { Button } from '../../../../shared/view/ui';
 import { cn } from '../../../../lib/utils';
 import type { Project, ProjectSession, LLMProvider } from '../../../../types/app';
 import type { SessionActivityMap } from '../../../../hooks/useSessionProtection';
+import { isImeComposingReact } from '../../../../utils/ime';
 import type { MCPServerStatus, SessionWithProvider } from '../../types/types';
 import { getTaskIndicatorStatus } from '../../utils/utils';
 
@@ -196,6 +197,7 @@ export default function SidebarProjectItem({
                       autoComplete="off"
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => {
+                        if (isImeComposingReact(event)) return;
                         if (event.key === 'Enter') {
                           saveProjectName();
                         }
@@ -331,6 +333,7 @@ export default function SidebarProjectItem({
                     placeholder={t('projects.projectNamePlaceholder')}
                     autoFocus
                     onKeyDown={(event) => {
+                      if (isImeComposingReact(event)) return;
                       if (event.key === 'Enter') {
                         saveProjectName();
                       }

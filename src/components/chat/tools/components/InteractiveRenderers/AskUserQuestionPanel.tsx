@@ -92,6 +92,10 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Don't capture keys when typing in the "Other" input
     if (e.target instanceof HTMLInputElement) return;
+    // An IME candidate window swallows these keys for its own purposes: digits
+    // pick a candidate and Enter commits one. Acting on them here would select
+    // an option (or submit) behind the user's back.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
 
     const q = questions[currentStep];
     if (!q) return;
@@ -311,7 +315,11 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                     value={otherTexts.get(currentStep) || ''}
                     onChange={(e) => setOtherText(currentStep, e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      // While an IME is composing, Enter commits the candidate
+                      // (e.g. picking Chinese characters) — submitting there
+                      // would send a half-typed answer the user never confirmed.
+                      const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+                      if (e.key === 'Enter' && !composing) {
                         e.preventDefault();
                         if (isLast) handleSubmit();
                         else setCurrentStep(s => s + 1);

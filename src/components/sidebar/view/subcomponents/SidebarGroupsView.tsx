@@ -15,6 +15,7 @@ import {
 import { ChevronDown, ChevronRight, FolderPlus, GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import type { LLMProvider, Project, ProjectSession } from '../../../../types/app';
+import { isImeComposingReact } from '../../../../utils/ime';
 import type { SessionWithProvider } from '../../types/types';
 import type { SessionGroupsController, SessionGroupMemberRef } from '../../hooks/useSessionGroups';
 
@@ -102,6 +103,7 @@ function SessionRow({
           onChange={(e) => onEditChange(e.target.value)}
           onBlur={onEditCommit}
           onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            if (isImeComposingReact(e)) return;
             if (e.key === 'Enter') onEditCommit();
             if (e.key === 'Escape') onEditCancel();
           }}
@@ -216,6 +218,7 @@ function SessionMoreMenu({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposingReact(e)) return;
             if (e.key === 'Enter' && name.trim()) {
               void onCreateAndAdd(name.trim());
               setName('');
@@ -526,6 +529,7 @@ export default function SidebarGroupsView({ sessionGroups, projectListProps }: P
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isImeComposingReact(e)) return;
                   if (e.key === 'Enter') void submitCreate();
                   if (e.key === 'Escape') {
                     setCreating(false);
