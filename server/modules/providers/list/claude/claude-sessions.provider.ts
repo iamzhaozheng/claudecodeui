@@ -343,6 +343,22 @@ const historyCache = new Map<string, {
 }>();
 const HISTORY_CACHE_MAX_ENTRIES = 8;
 
+/**
+ * Opening line the CLI prepends to a post-compaction continuation prompt.
+ *
+ * The JSONL rows written after the fact carry `isCompactSummary: true`, but the
+ * live SDK stream replays the same recap as an ordinary user message with no
+ * such flag — so during an active run it rendered as a giant blue bubble the
+ * user never typed. Matching the marker text recovers the intent on both paths.
+ */
+const COMPACT_CONTINUATION_MARKER
+  = 'This session is being continued from a previous conversation that ran out of context';
+
+function looksLikeCompactSummary(raw: AnyRecord, text: string): boolean {
+  if (raw.isCompactSummary === true) return true;
+  return text.trimStart().startsWith(COMPACT_CONTINUATION_MARKER);
+}
+
 export class ClaudeSessionsProvider implements IProviderSessions {
   /**
    * Normalizes one Claude JSONL entry or live SDK stream event into the shared
@@ -390,7 +406,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     // path further below misses the array form (leaving it to render as a giant
     // blue user bubble), so detect it up front and emit it as an
     // assistant-authored, foldable summary regardless of content shape.
-    if (raw.message?.role === 'user' && raw.isCompactSummary === true) {
+    if (raw.message?.role === 'user') {
       const content = raw.message?.content;
       const summaryText = typeof content === 'string'
         ? content
@@ -399,7 +415,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
             .map((part) => (part && typeof part === 'object' && part.type === 'text' ? String(part.text || '') : ''))
             .join('')
           : '';
-      if (summaryText.trim()) {
+      if (summaryText.trim() && looksLikeCompactSummary(raw, summaryText)) {
         return [createNormalizedMessage({
           id: baseId,
           sessionId,
@@ -514,7 +530,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
          * text; otherwise it is both filtered by the generic internal-prefix
          * check and visually mislabeled as a user message.
          */
-        if (raw.isCompactSummary === true && text.trim()) {
+        if (text.trim() && looksLikeCompactSummary(raw, text)) {
           messages.push(createNormalizedMessage({
             id: baseId,
             sessionId,
