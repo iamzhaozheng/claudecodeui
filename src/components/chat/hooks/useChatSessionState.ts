@@ -129,6 +129,11 @@ export function useChatSessionState({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  // Gate for auto-paging: set once the user scrolls upward, cleared on session
+  // change. Without it the sentinel observer fires on open and pages history
+  // nobody asked for.
+  const userWantsOlderRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
   const wasNearTopRef = useRef(false);
   const [searchTarget, setSearchTarget] = useState<{ timestamp?: string; uuid?: string; snippet?: string } | null>(null);
   const searchScrollActiveRef = useRef(false);
@@ -392,6 +397,21 @@ export function useChatSessionState({
     isUserScrolledUpRef.current = !nearBottom;
     setIsUserScrolledUp(!nearBottom);
 
+    // Opt into history paging only on a real upward scroll. Programmatic
+    // scrolls (initial positioning, anchor restore after a prepend) move the
+    // viewport down or keep it pinned, so they don't trip this.
+    const prevTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = container.scrollTop;
+    if (
+      !userWantsOlderRef.current
+      && container.scrollTop < prevTop
+      && !pendingInitialScrollRef.current
+      && !pendingScrollRestoreRef.current
+      && !isLoadingMoreRef.current
+    ) {
+      userWantsOlderRef.current = true;
+    }
+
     const scrolledNearTop = container.scrollTop < 100;
 
     // "Load all" prompt: appear (with fade-in) when the user reaches the top
@@ -433,6 +453,12 @@ export function useChatSessionState({
     // scroll event in that state is exactly what used to stall paging.
     const pump = async () => {
       if (pumping || cancelled) return;
+      // Only page history once the user has actually scrolled up to ask for it.
+      // On open, the view sits at the bottom but the sentinel can still be
+      // "visible" (short transcript, or the 400px margin), which kicked off a
+      // chain of fetches before the first paint had even settled — slow to open
+      // over the tunnel, and every prepend shifted the viewport under the user.
+      if (!userWantsOlderRef.current) return;
       pumping = true;
       try {
         while (!cancelled) {
@@ -486,6 +512,10 @@ export function useChatSessionState({
     pendingScrollRestoreRef.current = null;
     wasNearTopRef.current = false;
     isUserScrolledUpRef.current = false;
+    userWantsOlderRef.current = false;
+    // Seeded from the live position (not 0) so the first scroll event after a
+    // session change isn't misread as an upward scroll from the top.
+    lastScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? 0;
     setIsUserScrolledUp(false);
   }, [selectedProject?.projectId, selectedSession?.id]);
 
