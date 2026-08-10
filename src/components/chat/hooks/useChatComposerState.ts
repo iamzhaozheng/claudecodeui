@@ -161,32 +161,65 @@ const isImageAttachment = (attachment: ChatAttachment) => {
   return /\.(gif|jpe?g|png|svg|webp)$/i.test(attachment.path || attachment.name || '');
 };
 
+const UPLOAD_ATTEMPTS = 3;
+
+const uploadOneAttachment = async (file: File): Promise<unknown> => {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
+
+      const response = await authenticatedFetch('/api/assets/files', {
+        method: 'POST',
+        headers: {},
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const error = new Error(body?.error || 'Failed to upload files');
+        // 4xx means the server rejected this file (too large, bad type…).
+        // Retrying can't change that, so surface it immediately.
+        if (response.status >= 400 && response.status < 500) throw error;
+        throw Object.assign(error, { retryable: true });
+      }
+
+      const result = await response.json();
+      const uploaded = Array.isArray(result.attachments) ? result.attachments[0] : null;
+      if (!uploaded) {
+        throw Object.assign(new Error('File upload returned an incomplete result'), { retryable: true });
+      }
+      return uploaded;
+    } catch (error) {
+      lastError = error;
+      const retryable = (error as { retryable?: boolean })?.retryable !== false;
+      if (!retryable || attempt === UPLOAD_ATTEMPTS) break;
+      // A dropped request on a slow uplink surfaces as a TypeError ("Load
+      // failed" in Safari). Back off briefly and try this file again rather
+      // than failing the whole batch.
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Failed to upload files');
+};
+
+/**
+ * Uploads attachments one request at a time.
+ *
+ * Sending every file in a single multipart POST meant one dropped connection
+ * lost the entire batch — and on a slow uplink (phone -> relay -> home Mac,
+ * ~100KB/s up) a few screenshots take long enough that this happened often.
+ * Per-file requests keep each one short, and each retries independently.
+ */
 const uploadAttachmentFiles = async (files: File[]): Promise<unknown[]> => {
-  if (files.length === 0) {
-    return [];
+  const uploaded: unknown[] = [];
+  for (const file of files) {
+    uploaded.push(await uploadOneAttachment(file));
   }
-
-  const formData = new FormData();
-  files.forEach((file) => {
-    formData.append('files', file);
-  });
-
-  const response = await authenticatedFetch('/api/assets/files', {
-    method: 'POST',
-    headers: {},
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.error || 'Failed to upload files');
-  }
-
-  const result = await response.json();
-  if (!Array.isArray(result.attachments) || result.attachments.length !== files.length) {
-    throw new Error('File upload returned an incomplete result');
-  }
-  return result.attachments;
+  return uploaded;
 };
 
 export type QueuedDraft = {
@@ -591,7 +624,10 @@ export function useChatComposerState({
         img.onload = () => {
           try {
             URL.revokeObjectURL(url);
-            const MAX = 1600;
+            // 1280 keeps phone screenshots legible (text stays readable at the
+            // width Claude renders them) while roughly halving the bytes versus
+            // 1600 — the uplink to this relay is the slow part, not the decode.
+            const MAX = 1280;
             let width = img.width;
             let height = img.height;
             if (width > MAX || height > MAX) {
