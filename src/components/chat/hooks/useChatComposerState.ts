@@ -207,19 +207,17 @@ const uploadOneAttachment = async (file: File): Promise<unknown> => {
 };
 
 /**
- * Uploads attachments one request at a time.
+ * Uploads attachments as one request per file, all in flight together.
  *
  * Sending every file in a single multipart POST meant one dropped connection
  * lost the entire batch — and on a slow uplink (phone -> relay -> home Mac,
  * ~100KB/s up) a few screenshots take long enough that this happened often.
- * Per-file requests keep each one short, and each retries independently.
+ * Per-file requests keep each one short and independently retryable; running
+ * them concurrently keeps the wait at roughly one file instead of the sum of
+ * all of them, which is what the user waits on before their message appears.
  */
 const uploadAttachmentFiles = async (files: File[]): Promise<unknown[]> => {
-  const uploaded: unknown[] = [];
-  for (const file of files) {
-    uploaded.push(await uploadOneAttachment(file));
-  }
-  return uploaded;
+  return Promise.all(files.map((file) => uploadOneAttachment(file)));
 };
 
 export type QueuedDraft = {
@@ -947,6 +945,10 @@ export function useChatComposerState({
 
       let uploadedAttachments = previouslyUploadedAttachments;
       if (uploadedAttachments.length === 0 && currentAttachments.length > 0) {
+        // The message can't be posted until its attachments have URLs, and over
+        // the relay that takes seconds. Mark them in-flight so the composer
+        // shows progress instead of looking frozen after the send tap.
+        setUploadingFiles(new Map(currentAttachments.map((file) => [file.name, 0])));
         try {
           uploadedAttachments = await uploadAttachmentFiles(currentAttachments);
         } catch (error) {
@@ -957,8 +959,10 @@ export function useChatComposerState({
             content: `Failed to upload files: ${message}`,
             timestamp: new Date(),
           });
+          setUploadingFiles(new Map());
           return;
         }
+        setUploadingFiles(new Map());
       }
 
       const resolvedProjectPath = selectedProject.fullPath || selectedProject.path || '';

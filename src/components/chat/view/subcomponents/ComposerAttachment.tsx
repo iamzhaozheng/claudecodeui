@@ -56,8 +56,11 @@ const ComposerAttachment = ({ file, onRemove, uploadProgress, error }: ComposerA
         </div>
       )}
       {uploadProgress !== undefined && uploadProgress < 100 && (
+        // A spinner rather than a percentage: uploads go out via fetch, which
+        // reports no progress events, so a number here would just sit at 0
+        // and read as stuck on the seconds-long relay uplink.
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/50">
-          <div className="text-xs text-white">{uploadProgress}%</div>
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
         </div>
       )}
       {error && (
