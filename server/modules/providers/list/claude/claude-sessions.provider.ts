@@ -359,6 +359,64 @@ function looksLikeCompactSummary(raw: AnyRecord, text: string): boolean {
   return text.trimStart().startsWith(COMPACT_CONTINUATION_MARKER);
 }
 
+/**
+ * Per-field cap for tool result payloads shipped to the client.
+ *
+ * A transcript that reads large files accumulates enormous tool results — one
+ * session had single `Read` results near 1MB, making a 50-message page 15MB and
+ * effectively unloadable over a remote link. The UI renders these collapsed and
+ * only ever reads small fields (filenames, counts, patches), so the full text
+ * is dead weight on the wire.
+ */
+const MAX_TOOL_TEXT_CHARS = 20_000;
+
+function truncateToolText(value: string): string {
+  if (value.length <= MAX_TOOL_TEXT_CHARS) return value;
+  const dropped = value.length - MAX_TOOL_TEXT_CHARS;
+  return `${value.slice(0, MAX_TOOL_TEXT_CHARS)}\n\n… [truncated ${dropped.toLocaleString()} characters]`;
+}
+
+/**
+ * Trims the bulky text fields out of a raw `toolUseResult` while leaving its
+ * shape (and the small fields the renderers read) intact.
+ */
+function trimToolUseResult(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as AnyRecord;
+  let changed = false;
+  const trimmed: AnyRecord = {};
+
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === 'string' && entry.length > MAX_TOOL_TEXT_CHARS) {
+      trimmed[key] = truncateToolText(entry);
+      changed = true;
+      continue;
+    }
+    // `file` arrives as { content, filePath, … } for a text Read, or
+    // { base64, type, dimensions, … } when the tool read an image. Both are the
+    // biggest contributors: the text is already mirrored in toolResult.content,
+    // and a single screenshot's base64 runs ~500KB. Drop the payload but keep
+    // the surrounding metadata the renderers read.
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const nested = entry as AnyRecord;
+      if (typeof nested.base64 === 'string' && nested.base64.length > MAX_TOOL_TEXT_CHARS) {
+        const { base64: _dropped, ...rest } = nested;
+        trimmed[key] = { ...rest, base64Omitted: true };
+        changed = true;
+        continue;
+      }
+      if (typeof nested.content === 'string' && nested.content.length > MAX_TOOL_TEXT_CHARS) {
+        trimmed[key] = { ...nested, content: truncateToolText(nested.content) };
+        changed = true;
+        continue;
+      }
+    }
+    trimmed[key] = entry;
+  }
+
+  return changed ? trimmed : value;
+}
+
 export class ClaudeSessionsProvider implements IProviderSessions {
   /**
    * Normalizes one Claude JSONL entry or live SDK stream event into the shared
@@ -454,10 +512,10 @@ export class ClaudeSessionsProvider implements IProviderSessions {
               provider: PROVIDER,
               kind: 'tool_result',
               toolId: part.tool_use_id,
-              content: typeof part.content === 'string' ? part.content : JSON.stringify(part.content),
+              content: truncateToolText(typeof part.content === 'string' ? part.content : JSON.stringify(part.content)),
               isError: Boolean(part.is_error),
               subagentTools: raw.subagentTools,
-              toolUseResult: raw.toolUseResult,
+              toolUseResult: trimToolUseResult(raw.toolUseResult),
             }));
           } else if (part.type === 'text') {
             const text = part.text || '';
@@ -790,11 +848,11 @@ export class ClaudeSessionsProvider implements IProviderSessions {
         }
 
         msg.toolResult = {
-          content: typeof toolResult.content === 'string'
+          content: truncateToolText(typeof toolResult.content === 'string'
             ? toolResult.content
-            : JSON.stringify(toolResult.content),
+            : JSON.stringify(toolResult.content)),
           isError: toolResult.isError,
-          toolUseResult: toolResult.toolUseResult,
+          toolUseResult: trimToolUseResult(toolResult.toolUseResult),
         };
         msg.subagentTools = toolResult.subagentTools;
       }
