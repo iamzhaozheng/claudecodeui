@@ -600,8 +600,25 @@ export function useChatSessionState({
       });
     };
 
-    // Skip if already loaded and fresh
-    if (lastLoadedSessionKeyRef.current === sessionKey && sessionStore.has(selectedSessionId) && !sessionStore.isStale(selectedSessionId)) {
+    // Skip if already loaded and fresh. `has()` only means a slot exists — an
+    // empty one (a fetch that failed, or a slot created by a live event before
+    // any transcript arrived) would take this path and leave the view on the
+    // "Continue your conversation" empty state with no spinner and no refetch,
+    // which read as a blank session for as long as it took something else to
+    // populate it. Require actual messages before treating it as loaded.
+    const cachedSlot = sessionStore.has(selectedSessionId)
+      ? sessionStore.getSlot(selectedSessionId)
+      : null;
+    const cachedHasMessages = Boolean(
+      cachedSlot
+      && ((cachedSlot.serverMessages?.length ?? 0) > 0
+        || (cachedSlot.realtimeMessages?.length ?? 0) > 0),
+    );
+    if (
+      lastLoadedSessionKeyRef.current === sessionKey
+      && cachedHasMessages
+      && !sessionStore.isStale(selectedSessionId)
+    ) {
       subscribeToSelectedSession();
       return;
     }

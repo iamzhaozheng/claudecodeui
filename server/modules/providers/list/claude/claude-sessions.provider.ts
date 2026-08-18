@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import readline from 'node:readline';
 
 import type { IProviderSessions } from '@/shared/interfaces.js';
 import type { AnyRecord, FetchHistoryOptions, FetchHistoryResult, NormalizedMessage } from '@/shared/types.js';
-import { parseFilesInputTag } from '@/shared/image-attachments.js';
+import { getGlobalImageAssetsDir, parseFilesInputTag } from '@/shared/image-attachments.js';
 import { createNormalizedMessage, generateMessageId, readObjectRecord, sliceTailPage } from '@/shared/utils.js';
 import { sessionsDb } from '@/modules/database/index.js';
 
@@ -370,6 +371,56 @@ function looksLikeCompactSummary(raw: AnyRecord, text: string): boolean {
  */
 const MAX_TOOL_TEXT_CHARS = 20_000;
 
+/**
+ * Above this, an inline base64 image is written to the assets folder once and
+ * referenced by URL instead of being embedded in every transcript response.
+ */
+const MAX_INLINE_IMAGE_CHARS = 32_000;
+
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+/**
+ * Replaces a large inline image with a URL served from the assets folder.
+ *
+ * User-attached images live in the transcript as base64, so a page of 20
+ * messages carrying a few screenshots serialized to ~4MB and took minutes to
+ * arrive over a remote link — re-sent in full on every fetch, and uncacheable.
+ * Spilling to a content-hashed file makes the payload a short URL that the
+ * browser fetches once and caches. Falls back to the original data URI if the
+ * write fails, so rendering never depends on this succeeding.
+ */
+function spillInlineImage(base64Data: string, mediaType: string): string {
+  const dataUri = `data:${mediaType};base64,${base64Data}`;
+  if (base64Data.length <= MAX_INLINE_IMAGE_CHARS) return dataUri;
+
+  try {
+    const ext = IMAGE_EXTENSIONS[mediaType.toLowerCase()] ?? 'png';
+    const hash = createHash('sha1').update(base64Data).digest('hex');
+    const filename = `inline-${hash}.${ext}`;
+    const dir = getGlobalImageAssetsDir();
+    const target = path.join(dir, filename);
+
+    if (!fs.existsSync(target)) {
+      fs.mkdirSync(dir, { recursive: true });
+      // Write via a temp file so a concurrent request never observes a partial
+      // image at the final path.
+      const tmp = `${target}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, Buffer.from(base64Data, 'base64'));
+      fs.renameSync(tmp, target);
+    }
+    return `/api/assets/images/${encodeURIComponent(filename)}`;
+  } catch (error) {
+    console.warn('[ClaudeProvider] inline image spill failed:', error instanceof Error ? error.message : String(error));
+    return dataUri;
+  }
+}
+
 function truncateToolText(value: string): string {
   if (value.length <= MAX_TOOL_TEXT_CHARS) return value;
   const dropped = value.length - MAX_TOOL_TEXT_CHARS;
@@ -496,7 +547,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
         for (const part of raw.message.content) {
           if (part?.type === 'image' && part.source?.type === 'base64' && typeof part.source.data === 'string') {
             const mediaType = typeof part.source.media_type === 'string' ? part.source.media_type : 'image/png';
-            imageAttachments.push({ data: `data:${mediaType};base64,${part.source.data}` });
+            imageAttachments.push({ data: spillInlineImage(part.source.data, mediaType) });
           }
         }
         let imagesAttached = false;
