@@ -395,9 +395,9 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
  * browser fetches once and caches. Falls back to the original data URI if the
  * write fails, so rendering never depends on this succeeding.
  */
-function spillInlineImage(base64Data: string, mediaType: string): string {
-  const dataUri = `data:${mediaType};base64,${base64Data}`;
-  if (base64Data.length <= MAX_INLINE_IMAGE_CHARS) return dataUri;
+function spillInlineImage(base64Data: string, mediaType: string): { data: string } | { path: string } {
+  const inline = { data: `data:${mediaType};base64,${base64Data}` };
+  if (base64Data.length <= MAX_INLINE_IMAGE_CHARS) return inline;
 
   try {
     const ext = IMAGE_EXTENSIONS[mediaType.toLowerCase()] ?? 'png';
@@ -414,10 +414,14 @@ function spillInlineImage(base64Data: string, mediaType: string): string {
       fs.writeFileSync(tmp, Buffer.from(base64Data, 'base64'));
       fs.renameSync(tmp, target);
     }
-    return `/api/assets/images/${encodeURIComponent(filename)}`;
+    // Hand back a `path`, not a URL: the assets route requires a bearer token,
+    // which a bare <img src> cannot send. The client resolves `path` through an
+    // authenticated blob fetch, while `data` would be assigned to src directly
+    // and 401 into a broken-image icon.
+    return { path: filename };
   } catch (error) {
     console.warn('[ClaudeProvider] inline image spill failed:', error instanceof Error ? error.message : String(error));
-    return dataUri;
+    return inline;
   }
 }
 
@@ -543,11 +547,11 @@ export class ClaudeSessionsProvider implements IProviderSessions {
         // Image attachments sent through the SDK are persisted as base64
         // `image` blocks next to the prompt text. Collect them so the UI can
         // render them on the user bubble.
-        const imageAttachments: Array<{ data: string }> = [];
+        const imageAttachments: Array<{ data: string } | { path: string }> = [];
         for (const part of raw.message.content) {
           if (part?.type === 'image' && part.source?.type === 'base64' && typeof part.source.data === 'string') {
             const mediaType = typeof part.source.media_type === 'string' ? part.source.media_type : 'image/png';
-            imageAttachments.push({ data: spillInlineImage(part.source.data, mediaType) });
+            imageAttachments.push(spillInlineImage(part.source.data, mediaType));
           }
         }
         let imagesAttached = false;
