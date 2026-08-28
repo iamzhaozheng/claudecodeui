@@ -582,9 +582,26 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
 };
 
 /**
+ * Tool names that spawn a subagent and therefore render as a foldable
+ * container instead of a raw parameter dump.
+ *
+ * `Task` is the historical name; current Claude builds ship the same tool as
+ * `Agent`. Matching only `Task` sent `Agent` calls to the Default config,
+ * which rendered a bare "Parameters" row.
+ */
+const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent']);
+
+export function isSubagentToolName(toolName: string | undefined | null): boolean {
+  return typeof toolName === 'string' && SUBAGENT_TOOL_NAMES.has(toolName);
+}
+
+/**
  * Get configuration for a tool, with fallback to default
  */
 export function getToolConfig(toolName: string): ToolDisplayConfig {
+  if (isSubagentToolName(toolName)) {
+    return TOOL_CONFIGS.Task;
+  }
   return TOOL_CONFIGS[toolName] || TOOL_CONFIGS.Default;
 }
 

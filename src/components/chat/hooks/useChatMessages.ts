@@ -6,6 +6,7 @@
 import type { NormalizedMessage } from '../../../stores/useSessionStore';
 import type { ChatMessage, SubagentChildTool } from '../types/types';
 import { decodeHtmlEntities, unescapeWithMathProtection, formatUsageLimitText } from '../utils/chatFormatting';
+import { isSubagentToolName } from '../tools/configs/toolConfigs';
 
 function formatToolResultContent(content: unknown): string {
   const text = typeof content === 'string' ? content : JSON.stringify(content);
@@ -104,6 +105,16 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
         const files = Array.isArray(msg.files) && msg.files.length > 0 ? msg.files : undefined;
         if (!content.trim() && !images && !files) continue;
 
+        // While a subagent runs, the SDK streams its prompt back as a `user`
+        // message tagged with the spawning tool call. It is the agent's input,
+        // not something the human typed, and rendering it as a user bubble made
+        // it look like a message the user never sent. The prompt is already
+        // shown inside the subagent's own foldable container, so drop it here.
+        // (History replay from disk never contains these — this is live-only.)
+        if (msg.role === 'user' && msg.parentToolUseId) {
+          continue;
+        }
+
         // Auto-loaded skills (Claude invoking the Skill tool) are flagged by the
         // server as a compact skill-load marker (skillName + short preview) so
         // the UI can show a foldable row instead of a giant wall of text.
@@ -168,7 +179,7 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
 
       case 'tool_use': {
         const tr = msg.toolResult || (msg.toolId ? toolResultMap.get(msg.toolId) : null);
-        const isSubagentContainer = msg.toolName === 'Task';
+        const isSubagentContainer = isSubagentToolName(msg.toolName);
 
         // Build child tools from subagentTools
         const childTools: SubagentChildTool[] = [];
