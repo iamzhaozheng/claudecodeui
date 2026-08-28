@@ -13,7 +13,7 @@ interface UseQueuedMessageAutoSendArgs {
    */
   activeSessionId: string | null;
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   markSessionProcessing: MarkSessionProcessing;
 }
 
@@ -57,13 +57,19 @@ export function useQueuedMessageAutoSend({
         continue;
       }
 
-      clearQueuedMessage(sessionId);
-      sendMessage({
+      // A half-open socket passes the readyState check above and still drops
+      // the frame, so the claim ticket is only released on a confirmed send.
+      const wasSent = sendMessage({
         type: 'chat.send',
         sessionId,
         content: queued.content,
         options: { ...(queued.options ?? {}), attachments: queued.attachments ?? queued.images ?? [] },
       });
+      if (!wasSent) {
+        continue;
+      }
+
+      clearQueuedMessage(sessionId);
       markSessionProcessing(sessionId, { statusText: null, canInterrupt: true });
     }
   }, [processingSessions, activeSessionId, ws, sendMessage, markSessionProcessing]);

@@ -22,7 +22,14 @@ type ServerEventListener = (event: ServerEvent) => void;
 
 type WebSocketContextType = {
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  /**
+   * Sends a frame and reports whether it actually reached the socket.
+   *
+   * Callers that show the message as sent (the composer's user bubble, the
+   * queued-draft dispatchers) MUST check the result: a `false` return means
+   * the bytes were dropped and the user's text still needs to be preserved.
+   */
+  sendMessage: (message: unknown) => boolean;
   /**
    * Subscribes to every websocket frame. Returns an unsubscribe function.
    *
@@ -41,6 +48,13 @@ type WebSocketContextType = {
   latestMessage: ServerEvent | null;
   isConnected: boolean;
 };
+
+/**
+ * How long a `chat.ping` may go unanswered before the socket is treated as
+ * half-open. Generous enough for a phone reacquiring a mobile signal, far
+ * below the server's 30s protocol heartbeat.
+ */
+const LIVENESS_PROBE_TIMEOUT_MS = 5000;
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
@@ -76,6 +90,9 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const [latestMessage, setLatestMessage] = useState<ServerEvent | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  /** Timestamp of the last frame received, used by the liveness probe. */
+  const lastInboundAtRef = useRef(0);
+  const livenessProbeRef = useRef<NodeJS.Timeout | null>(null);
   const { isLoading: isAuthLoading, token, user } = useAuth();
 
   const dispatch = useCallback((event: ServerEvent) => {
@@ -134,6 +151,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
       websocket.onopen = () => {
         setIsConnected(true);
+        lastInboundAtRef.current = Date.now();
         if (hasConnectedRef.current) {
           // This is a reconnect — signal so components can catch up on missed messages
           dispatch({ kind: 'websocket_reconnected', timestamp: Date.now() });
@@ -144,6 +162,13 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as ServerEvent;
+          // Any inbound frame proves the socket is alive, which is what the
+          // liveness probe below waits for. `chat_pong` exists only for that
+          // proof, so it is not forwarded to feature listeners.
+          lastInboundAtRef.current = Date.now();
+          if (data.kind === 'chat_pong') {
+            return;
+          }
           dispatch(data);
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -175,12 +200,82 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
   const sendMessage = useCallback((message: unknown) => {
     const socket = wsRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(message));
-    } else {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not connected');
+      return false;
+    }
+    try {
+      socket.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      // A socket can reject a send between the readyState check and the call
+      // itself (the browser tore it down mid-statement). Report the drop.
+      console.error('WebSocket send failed:', error);
+      return false;
     }
   }, []);
+
+  /**
+   * Detects a socket that iOS froze while the tab was backgrounded.
+   *
+   * Such a socket still reports `readyState === OPEN`, so `send()` succeeds and
+   * silently drops the bytes — the failure mode behind messages that render as
+   * sent but never reach the server. On return to the foreground we send an
+   * application-level ping and give it a short deadline: no inbound frame in
+   * that window means the socket is half-open, so close it to trigger the
+   * normal reconnect instead of waiting out the server's 30s heartbeat.
+   */
+  const probeLiveness = useCallback(() => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (livenessProbeRef.current) {
+      return; // A probe is already pending; don't stack deadlines.
+    }
+
+    const probeSentAt = Date.now();
+    try {
+      socket.send(JSON.stringify({ type: 'chat.ping', nonce: String(probeSentAt) }));
+    } catch {
+      socket.close();
+      return;
+    }
+
+    livenessProbeRef.current = setTimeout(() => {
+      livenessProbeRef.current = null;
+      if (wsRef.current !== socket) {
+        return;
+      }
+      if (lastInboundAtRef.current >= probeSentAt) {
+        return; // The pong (or any other frame) came back: the socket is fine.
+      }
+      // Half-open. `close()` fires onclose, which schedules the reconnect.
+      socket.close();
+    }, LIVENESS_PROBE_TIMEOUT_MS);
+  }, []);
+
+  useEffect(() => {
+    const handleWake = () => {
+      if (document.visibilityState === 'visible') {
+        probeLiveness();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWake);
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleWake);
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      if (livenessProbeRef.current) {
+        clearTimeout(livenessProbeRef.current);
+        livenessProbeRef.current = null;
+      }
+    };
+  }, [probeLiveness]);
 
   const subscribe = useCallback((listener: ServerEventListener) => {
     listenersRef.current.add(listener);

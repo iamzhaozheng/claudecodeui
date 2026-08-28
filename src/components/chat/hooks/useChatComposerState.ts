@@ -52,7 +52,7 @@ interface UseChatComposerStateArgs {
   processingSessions?: SessionActivityMap;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   sendByCtrlEnter?: boolean;
   onSessionProcessing?: MarkSessionProcessing;
   /**
@@ -874,8 +874,7 @@ export function useChatComposerState({
             processingSessionsRef.current
             && !processingSessionsRef.current.has(queuedSessionKey)
           ) {
-            clearQueuedMessage(queuedSessionKey);
-            sendMessage({
+            const wasQueuedSent = sendMessage({
               type: 'chat.send',
               sessionId: queuedSessionKey,
               content: durableDraft.content,
@@ -884,7 +883,12 @@ export function useChatComposerState({
                 attachments: durableDraft.uploadedAttachments ?? [],
               },
             });
-            onSessionProcessing?.(queuedSessionKey, { statusText: null, canInterrupt: true });
+            // Only give up the claim ticket once the frame is actually out;
+            // otherwise leave it for a later flush to retry.
+            if (wasQueuedSent) {
+              clearQueuedMessage(queuedSessionKey);
+              onSessionProcessing?.(queuedSessionKey, { statusText: null, canInterrupt: true });
+            }
           }
           return;
         }
@@ -1023,6 +1027,37 @@ export function useChatComposerState({
         timestamp: new Date(),
       };
 
+      // One message shape for every provider. The backend resolves the
+      // provider, project path, and provider-native resume id from the
+      // session row; `options` only carries composer-level preferences.
+      //
+      // The send happens BEFORE the bubble is rendered: a dropped frame (closed
+      // or half-open socket) must not leave the user looking at a message that
+      // was never delivered.
+      const wasSent = sendMessage({
+        type: 'chat.send',
+        sessionId: targetSessionId,
+        content: messageContent,
+        options: {
+          ...(queuedSubmission?.options ?? buildSendOptions(messageContent)),
+          attachments: uploadedAttachments,
+        },
+      });
+
+      if (!wasSent) {
+        // Keep the composer exactly as the user left it (text and attachments)
+        // so the send can be retried with one tap once the socket is back.
+        setInput(currentInput);
+        inputValueRef.current = currentInput;
+        setAttachedFiles(currentAttachments);
+        addMessage({
+          type: 'error',
+          content: '消息未发送：与服务器的连接已断开。正在重连，请稍后重试（输入内容已保留）。',
+          timestamp: new Date(),
+        });
+        return;
+      }
+
       addMessage(userMessage);
       // Mark this request as processing in the per-session activity map (the
       // single source of truth the indicator derives from). The id is always
@@ -1034,19 +1069,6 @@ export function useChatComposerState({
 
       setIsUserScrolledUp(false);
       setTimeout(() => scrollToBottom(), 100);
-
-      // One message shape for every provider. The backend resolves the
-      // provider, project path, and provider-native resume id from the
-      // session row; `options` only carries composer-level preferences.
-      sendMessage({
-        type: 'chat.send',
-        sessionId: targetSessionId,
-        content: messageContent,
-        options: {
-          ...(queuedSubmission?.options ?? buildSendOptions(messageContent)),
-          attachments: uploadedAttachments,
-        },
-      });
 
       setInput('');
       inputValueRef.current = '';

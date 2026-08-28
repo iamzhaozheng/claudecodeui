@@ -364,11 +364,12 @@ function handlePermissionResponse(data: AnyRecord, dependencies: ChatWebSocketDe
  * - `chat.abort`               { sessionId }
  * - `chat.subscribe`           { sessions: [{ sessionId, lastSeq? }] }
  * - `chat.permission-response` { requestId, allow, updatedInput?, message?, rememberEntry? }
+ * - `chat.ping`                { nonce? }
  *
  * Outbound protocol (server to client): every frame is `kind`-based — either
  * a provider `NormalizedMessage` (with `seq`) or a gateway event
  * (`chat_subscribed`, `session_upserted`, `loading_progress`,
- * `protocol_error`).
+ * `protocol_error`, `chat_pong`).
  */
 export function handleChatConnection(
   ws: WebSocket,
@@ -402,6 +403,17 @@ export function handleChatConnection(
           return;
         case 'chat.permission-response':
           handlePermissionResponse(data, dependencies);
+          return;
+        case 'chat.ping':
+          // Application-level liveness probe. The browser cannot observe the
+          // protocol-level pong of the server heartbeat, so a client returning
+          // from background uses this round trip to tell a live socket from a
+          // half-open one that iOS froze while `readyState` still reads OPEN.
+          sendJson(ws, {
+            kind: 'chat_pong',
+            nonce: typeof data.nonce === 'string' ? data.nonce : null,
+            timestamp: new Date().toISOString(),
+          });
           return;
         default:
           sendProtocolError(ws, 'UNKNOWN_MESSAGE_TYPE', `Unknown message type "${messageType}".`);
