@@ -434,9 +434,12 @@ async function loadMcpConfig(cwd) {
       // Global MCP servers loaded
     }
 
-    // Add/override with project-specific MCP servers
-    if (claudeConfig.claudeProjects && cwd) {
-      const projectConfig = claudeConfig.claudeProjects[cwd];
+    // Add/override with project-specific MCP servers. The CLI stores these
+    // under `projects`, keyed by the project's absolute path — `claudeProjects`
+    // is not a key the CLI ever writes, so this branch never matched and every
+    // project-scoped MCP server was silently invisible to the web UI.
+    if (claudeConfig.projects && cwd) {
+      const projectConfig = claudeConfig.projects[cwd];
       if (projectConfig && projectConfig.mcpServers && typeof projectConfig.mcpServers === 'object') {
         mcpServers = { ...mcpServers, ...projectConfig.mcpServers };
         // Project MCP servers merged
@@ -501,7 +504,20 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
 
     const mcpServers = await loadMcpConfig(options.cwd);
     if (mcpServers) {
-      sdkOptions.mcpServers = mcpServers;
+      // MCP startup is non-blocking by default and the servers' tools are
+      // deferred behind tool search, so the first turn is built while the
+      // server is still `pending` and the model sees no MCP tools at all —
+      // it answers "I don't have those tools" instead of using them. There is
+      // no interactive session here to retry on, so wait for the connection
+      // (SDK-capped at 5s) and put the tools in the turn-1 prompt.
+      sdkOptions.mcpServers = Object.fromEntries(
+        Object.entries(mcpServers).map(([name, config]) => [
+          name,
+          config && typeof config === 'object' && !Array.isArray(config)
+            ? { ...config, alwaysLoad: true }
+            : config,
+        ]),
+      );
     }
 
     // Turns with image attachments switch to streaming input so the images
