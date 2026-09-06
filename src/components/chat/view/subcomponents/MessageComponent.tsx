@@ -9,6 +9,7 @@ import type {
   Provider,
 } from '../../types/types';
 import { formatUsageLimitText } from '../../utils/chatFormatting';
+import { formatAbsolute, formatTurnDuration } from '../../utils/messageTiming';
 import type { Project } from '../../../../types/app';
 import { ToolRenderer, ToolErrorDisplay, shouldHideToolResult } from '../../tools';
 import { Reasoning, ReasoningTrigger, ReasoningContent } from '../../../../shared/view/ui';
@@ -28,6 +29,10 @@ type DiffLine = {
 type MessageComponentProps = {
   message: ChatMessage;
   prevMessage: ChatMessage | null;
+  /** True when this is the closing message of an assistant run. */
+  isRunEnd?: boolean;
+  /** Epoch ms of the user turn that started this run, when known. */
+  runStartedAt?: number;
   createDiff: (oldStr: string, newStr: string) => DiffLine[];
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
@@ -46,7 +51,7 @@ type InteractiveOption = {
 
 const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
 
-const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
+const MessageComponent = memo(({ message, prevMessage, isRunEnd = false, runStartedAt, createDiff, onFileOpen, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     ((prevMessage.type === 'assistant') ||
@@ -80,6 +85,24 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
 
 
   const formattedTime = useMemo(() => new Date(message.timestamp).toLocaleTimeString(), [message.timestamp]);
+  // Full date+time on hover (long-press on touch) — the clock alone can't tell
+  // you *which day* a message landed on when scrolling back through history.
+  const absoluteTime = useMemo(() => formatAbsolute(message.timestamp), [message.timestamp]);
+  // "took 3m42s" on the message that ends a run: the composer's live timer is
+  // gone by the time you'd want to read it, so this is the only durable record
+  // of how long a reply actually took.
+  const turnDuration = useMemo(
+    () => (isRunEnd && runStartedAt !== undefined
+      ? formatTurnDuration(runStartedAt, message.timestamp)
+      : ''),
+    [isRunEnd, runStartedAt, message.timestamp],
+  );
+  // A grouped message normally hides its clock, but the message that closes a
+  // run is exactly the one worth timestamping — it's when the answer landed.
+  const showTimeMeta = !isGrouped || isRunEnd;
+  const timeTitle = turnDuration
+    ? `${absoluteTime} · ${t('message.tookDuration', { duration: turnDuration, defaultValue: 'took {{duration}}' })}`
+    : absoluteTime;
   const shouldHideThinkingMessage = Boolean(message.isThinking && !showThinking);
 
   if (shouldHideThinkingMessage) {
@@ -201,13 +224,13 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                   {shouldShowUserCopyControl && (
                     <MessageCopyControl content={userCopyContent} messageType="user" />
                   )}
-                  <span>{formattedTime}</span>
+                  <span className="tabular-nums" title={absoluteTime}>{formattedTime}</span>
                 </div>
               </div>
             ) : (
               /* Attachment-only turn: no text bubble, but the timestamp still shows */
               <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
-                <span>{formattedTime}</span>
+                <span className="tabular-nums" title={absoluteTime}>{formattedTime}</span>
               </div>
             )}
           </div>
@@ -470,7 +493,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               </div>
             )}
 
-            {(shouldShowAssistantCopyControl || !isGrouped) && (
+            {(shouldShowAssistantCopyControl || showTimeMeta) && (
               <div className="mt-1 flex w-full items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
                 {shouldShowAssistantCopyControl && (
                   <MessageCopyControl content={assistantCopyContent} messageType="assistant" />
@@ -478,7 +501,17 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                 {shouldShowAssistantCopyControl && (
                   <MessageSpeakControl content={assistantCopyContent} />
                 )}
-                {!isGrouped && <span>{formattedTime}</span>}
+                {showTimeMeta && (
+                  <span className="tabular-nums" title={timeTitle}>{formattedTime}</span>
+                )}
+                {turnDuration && (
+                  <span
+                    className="tabular-nums text-gray-400/80 dark:text-gray-500/80"
+                    title={timeTitle}
+                  >
+                    · {t('message.tookDuration', { duration: turnDuration, defaultValue: 'took {{duration}}' })}
+                  </span>
+                )}
               </div>
             )}
           </div>

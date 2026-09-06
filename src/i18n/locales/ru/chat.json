@@ -215,5 +215,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "Начать следующую задачу"
+  },
+  "message": {
+    "tookDuration": "заняло {{duration}}"
   }
 }

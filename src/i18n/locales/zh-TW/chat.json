@@ -251,5 +251,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "開始下一個任務"
+  },
+  "message": {
+    "tookDuration": "耗時 {{duration}}"
   }
 }

@@ -215,5 +215,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "다음 작업 시작"
+  },
+  "message": {
+    "tookDuration": "소요 {{duration}}"
   }
 }

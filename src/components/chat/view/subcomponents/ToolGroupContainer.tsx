@@ -19,6 +19,8 @@ interface ToolGroupContainerProps {
   prevMessage: ChatMessage | null;
   createDiff: (oldStr: string, newStr: string) => DiffLine[];
   getMessageKey: (message: ChatMessage) => string;
+  /** Set by the pane on the closing message of each assistant run. */
+  runEndTiming?: WeakMap<ChatMessage, { runStartedAt: number | null }>;
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
   onGrantToolPermission?: (suggestion: ClaudePermissionSuggestion) => PermissionGrantResult | null | undefined;
@@ -62,6 +64,7 @@ export default function ToolGroupContainer({
   prevMessage,
   createDiff,
   getMessageKey,
+  runEndTiming,
   onFileOpen,
   onShowSettings,
   onGrantToolPermission,
@@ -127,6 +130,8 @@ export default function ToolGroupContainer({
               key={getMessageKey(message)}
               message={message}
               prevMessage={index > 0 ? group.messages[index - 1] : prevMessage}
+              runStartedAt={runEndTiming?.get(message)?.runStartedAt ?? undefined}
+              isRunEnd={runEndTiming?.has(message) ?? false}
               createDiff={createDiff}
               onFileOpen={onFileOpen}
               onShowSettings={onShowSettings}

@@ -244,5 +244,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "Start the next task"
+  },
+  "message": {
+    "tookDuration": "took {{duration}}"
   }
 }

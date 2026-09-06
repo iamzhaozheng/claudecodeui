@@ -202,5 +202,8 @@
     "providers": {
       "assistant": "Assistant"
     }
+  },
+  "message": {
+    "tookDuration": "所要 {{duration}}"
   }
 }

@@ -11,6 +11,7 @@ import type {
 } from '../../../../types/app';
 import { getIntrinsicMessageKey } from '../../utils/messageKeys';
 import { groupConsecutiveTools, isToolGroupItem } from '../../utils/toolGrouping';
+import { toEpochMs } from '../../utils/messageTiming';
 
 import MessageComponent from './MessageComponent';
 import ProviderSelectionEmptyState from './ProviderSelectionEmptyState';
@@ -156,6 +157,54 @@ function ChatMessagesPane({
     [messageKeyMap],
   );
 
+  // Marks the closing message of each assistant run and records when that run
+  // started, so the reply that actually answers the user can show "finished at
+  // HH:MM:SS · took 3m42s".
+  //
+  // Without this the transcript is silent about timing on exactly the messages
+  // that matter: MessageComponent hides the clock on every message whose
+  // predecessor shares its type, and one long answer arrives as dozens of
+  // consecutive assistant rows — so the final one, the only timestamp worth
+  // reading, is always the one suppressed. The running timer in the composer
+  // isn't a substitute; it unmounts when the run ends and is never persisted.
+  //
+  // A run is the stretch of provider output between two user turns. Only its
+  // last *rendered* message is tagged, so a split reply reports one honest
+  // total instead of a badge per fragment. Messages that render nothing
+  // (reasoning while `showThinking` is off) can't carry the badge and are
+  // skipped when looking backwards for the run's end.
+  const runEndTiming = useMemo(() => {
+    const timings = new WeakMap<ChatMessage, { runStartedAt: number | null }>();
+    const rendersNothing = (message: ChatMessage) =>
+      Boolean(message.isThinking && !showThinking);
+
+    let runStartedAt: number | null = null;
+    let lastRendered: ChatMessage | null = null;
+
+    const closeRun = () => {
+      if (lastRendered) {
+        timings.set(lastRendered, { runStartedAt });
+      }
+      lastRendered = null;
+    };
+
+    for (const message of visibleMessages) {
+      if (message.type === 'user') {
+        // The user turn closes the previous run and starts the clock on the next.
+        closeRun();
+        runStartedAt = toEpochMs(message.timestamp);
+        continue;
+      }
+      if (rendersNothing(message)) {
+        continue;
+      }
+      lastRendered = message;
+    }
+    closeRun();
+
+    return timings;
+  }, [visibleMessages, showThinking]);
+
   return (
     <div
       ref={scrollContainerRef}
@@ -261,6 +310,7 @@ function ChatMessagesPane({
                     prevMessage={groupPrevMessage}
                     createDiff={createDiff}
                     getMessageKey={getMessageKey}
+                    runEndTiming={runEndTiming}
                     onFileOpen={onFileOpen}
                     onShowSettings={onShowSettings}
                     onGrantToolPermission={onGrantToolPermission}
@@ -280,6 +330,8 @@ function ChatMessagesPane({
                   key={getMessageKey(item)}
                   message={item}
                   prevMessage={messagePrevMessage}
+                  runStartedAt={runEndTiming.get(item)?.runStartedAt ?? undefined}
+                  isRunEnd={runEndTiming.has(item)}
                   createDiff={createDiff}
                   onFileOpen={onFileOpen}
                   onShowSettings={onShowSettings}

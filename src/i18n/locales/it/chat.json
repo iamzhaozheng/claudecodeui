@@ -215,5 +215,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "Inizia l'attività successiva"
+  },
+  "message": {
+    "tookDuration": "durata {{duration}}"
   }
 }

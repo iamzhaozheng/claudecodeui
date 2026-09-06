@@ -215,5 +215,8 @@
   },
   "tasks": {
     "nextTaskPrompt": "Sonraki görevi başlat"
+  },
+  "message": {
+    "tookDuration": "süre {{duration}}"
   }
 }
