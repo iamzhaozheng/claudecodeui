@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 
 import { api } from '../utils/api';
+import { isEmbedMode, rootPath, sessionPath } from '../utils/embedMode';
 import type { ServerEvent } from '../contexts/WebSocketContext';
 import type {
   AppTab,
@@ -385,6 +386,13 @@ export function useProjectsState({
   const [activeTab, setActiveTab] = useState<AppTab>(readPersistedTab);
 
   useEffect(() => {
+    // `activeTab` is a single origin-global key. Grid panes are same-origin, so
+    // letting each one persist its tab means the last pane to switch decides
+    // what every other pane opens on next mount. Panes keep their tab in
+    // component state only.
+    if (isEmbedMode()) {
+      return;
+    }
     try {
       localStorage.setItem('activeTab', activeTab);
     } catch {
@@ -684,7 +692,10 @@ export function useProjectsState({
   // and bump their activity — landing on a stale conversation the user never
   // opened. The last-viewed id is the honest "where was I" signal.
   useEffect(() => {
-    if (!sessionId) {
+    // Skipped in grid panes: with several panes open they would each claim to
+    // be "where I was", and whichever rendered last would win. The shell
+    // persists the whole grid layout instead.
+    if (!sessionId || isEmbedMode()) {
       return;
     }
     try {
@@ -704,6 +715,14 @@ export function useProjectsState({
       return;
     }
 
+    // Not in a grid pane. Auto-landing picks one "best" session, so every empty
+    // pane would land on the same one — the user would open a 4-pane grid and
+    // see four copies of a single session. An empty pane stays empty until the
+    // user picks something through its own drawer.
+    if (isEmbedMode()) {
+      return;
+    }
+
     const sessionExists = (id: string) =>
       projects.some((project) => (project.sessions ?? []).some((session) => String(session.id) === id));
 
@@ -715,7 +734,7 @@ export function useProjectsState({
     }
     if (saved && sessionExists(saved)) {
       didAutoLandRef.current = true;
-      navigate(`/session/${saved}`, { replace: true });
+      navigate(sessionPath(saved), { replace: true });
       return;
     }
 
@@ -732,7 +751,7 @@ export function useProjectsState({
 
     if (best) {
       didAutoLandRef.current = true;
-      navigate(`/session/${best.id}`, { replace: true });
+      navigate(sessionPath(best.id), { replace: true });
     } else if (projects.length === 1) {
       didAutoLandRef.current = true;
       setSelectedProject(projects[0]);
@@ -894,7 +913,7 @@ export function useProjectsState({
       });
 
       if (sessionId === aliasedSelectedSessionId) {
-        navigate(`/session/${upsert.sessionId}`);
+        navigate(sessionPath(upsert.sessionId));
       }
     };
 
@@ -992,7 +1011,7 @@ export function useProjectsState({
       // The URL carried a provider-native alias id: swap it for the canonical
       // app-facing id and let this effect re-run against the new URL.
       if (typeof details.sessionId === 'string' && details.sessionId && details.sessionId !== sessionId) {
-        navigate(`/session/${details.sessionId}`, { replace: true });
+        navigate(sessionPath(details.sessionId), { replace: true });
         return;
       }
 
@@ -1048,7 +1067,7 @@ export function useProjectsState({
     (project: Project) => {
       setSelectedProject(project);
       setSelectedSession(null);
-      navigate('/');
+      navigate(rootPath());
 
       if (isMobile) {
         setSidebarOpen(false);
@@ -1073,7 +1092,7 @@ export function useProjectsState({
         setSidebarOpen(false);
       }
 
-      navigate(`/session/${session.id}`);
+      navigate(sessionPath(session.id));
     },
     [activeTab, clearSessionAttention, isMobile, navigate],
   );
@@ -1084,7 +1103,7 @@ export function useProjectsState({
       setSelectedSession(null);
       setActiveTab('chat');
       setNewSessionTrigger((previous) => previous + 1);
-      navigate('/');
+      navigate(rootPath());
 
       if (isMobile) {
         setSidebarOpen(false);
@@ -1099,7 +1118,7 @@ export function useProjectsState({
 
       if (selectedSession?.id === sessionIdToDelete) {
         setSelectedSession(null);
-        navigate('/');
+        navigate(rootPath());
       }
 
       setProjects((prevProjects) =>
@@ -1213,7 +1232,7 @@ export function useProjectsState({
       if (selectedProject?.projectId === projectId) {
         setSelectedProject(null);
         setSelectedSession(null);
-        navigate('/');
+        navigate(rootPath());
       }
 
       setProjects((prevProjects) => prevProjects.filter((project) => project.projectId !== projectId));

@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { LayoutGrid } from 'lucide-react';
+
 import type { MainContentHeaderProps } from '../../types/types';
+import { isEmbedMode } from '../../../../utils/embedMode';
 import MobileMenuButton from './MobileMenuButton';
 import MainContentTabSwitcher from './MainContentTabSwitcher';
 import MainContentTitle from './MainContentTitle';
@@ -67,6 +71,21 @@ export default function MainContentHeader({
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-background to-transparent" />
           )}
         </div>
+
+        {/*
+          Multi-column view. Hidden on narrow screens (no room to split) and
+          inside a pane, where it would nest a grid within a grid.
+        */}
+        {!isMobile && !isEmbedMode() && (
+          <Link
+            to="/grid"
+            title="Multi-column view"
+            aria-label="Multi-column view"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Link>
+        )}
       </div>
     </div>
   );

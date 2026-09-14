@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+import { isEmbedMode } from '../utils/embedMode';
+
 type UseDeviceSettingsOptions = {
   mobileBreakpoint?: number;
   trackMobile?: boolean;
@@ -9,6 +11,14 @@ type UseDeviceSettingsOptions = {
 const getIsMobile = (mobileBreakpoint: number): boolean => {
   if (typeof window === 'undefined') {
     return false;
+  }
+
+  // A grid pane reports its own width, not the window's. Four panes on a 3440px
+  // display are ~860px each — above the breakpoint, so the fixed sidebar would
+  // stay expanded and eat half of every pane. The drawer layout is what makes a
+  // pane usable at that width, so embed mode opts into it regardless of width.
+  if (isEmbedMode()) {
+    return true;
   }
 
   return window.innerWidth < mobileBreakpoint;

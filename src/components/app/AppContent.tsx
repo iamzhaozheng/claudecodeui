@@ -13,6 +13,8 @@ import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
 import { useQueuedMessageAutoSend } from '../../hooks/useQueuedMessageAutoSend';
 import { api } from '../../utils/api';
+import { paneIndex, rootPath, sessionPath } from '../../utils/embedMode';
+import { GRID_SESSION_MESSAGE } from '../grid/messages';
 
 type RunningSessionApiItem = {
   sessionId?: unknown;
@@ -86,6 +88,26 @@ function AppContentInner() {
     isMobile,
     activeSessions: processingSessions,
   });
+
+  // Grid panes report the session they land on so the shell can persist the
+  // layout. The pane navigates itself (via the sidebar drawer); the shell only
+  // records the outcome, so a refresh restores the same set of sessions.
+  useEffect(() => {
+    const index = paneIndex();
+    if (index === null) {
+      return;
+    }
+
+    try {
+      window.parent.postMessage({
+        type: GRID_SESSION_MESSAGE,
+        index,
+        sessionId: sessionId ?? null,
+      }, window.location.origin);
+    } catch {
+      /* Cross-origin parent — the shell simply keeps its previous layout. */
+    }
+  }, [sessionId]);
 
   // Queued messages for sessions that finish while another session (or none)
   // is being viewed are sent from here; the viewed session's composer handles
@@ -165,12 +187,15 @@ function AppContentInner() {
       setSidebarOpen(false);
       void refreshProjectsSilently();
 
+      // Keeps a pane inside its own route family. Which client the service
+      // worker delivers to is not something we control (see sw.js `matchAll`),
+      // so a pane may well be the one that receives this.
       if (typeof message.sessionId === 'string' && message.sessionId) {
-        navigate(`/session/${message.sessionId}`);
+        navigate(sessionPath(message.sessionId));
         return;
       }
 
-      navigate('/');
+      navigate(rootPath());
     };
 
     navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
@@ -255,7 +280,7 @@ function AppContentInner() {
           onSessionIdle={markSessionIdle}
           processingSessions={processingSessions}
           onNavigateToSession={(targetSessionId: string, options) =>
-            navigate(`/session/${targetSessionId}`, { replace: Boolean(options?.replace) })
+            navigate(sessionPath(targetSessionId), { replace: Boolean(options?.replace) })
           }
           onSessionEstablished={(targetSessionId, context) =>
             registerOptimisticSession({ sessionId: targetSessionId, ...context })

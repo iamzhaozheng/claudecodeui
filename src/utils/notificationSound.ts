@@ -1,3 +1,7 @@
+import { GRID_SOUND_MESSAGE } from '../components/grid/messages';
+
+import { isEmbedMode } from './embedMode';
+
 const NOTIFICATION_SOUND_ENABLED_STORAGE_KEY = 'notificationSoundEnabled';
 const AudioContextConstructor =
   typeof window !== 'undefined'
@@ -60,6 +64,19 @@ const playTone = (
 
 export const playNotificationSound = async ({ force = false } = {}): Promise<void> => {
   if (!force && !isNotificationSoundEnabled()) {
+    return;
+  }
+
+  // In a grid pane, hand off to the shell. Four panes finishing at once would
+  // otherwise fire four overlapping chimes; the shell coalesces them into one.
+  // A pane also rarely has the user gesture an AudioContext needs, whereas the
+  // shell — the document the user actually clicks — usually does.
+  if (isEmbedMode()) {
+    try {
+      window.parent.postMessage({ type: GRID_SOUND_MESSAGE }, window.location.origin);
+    } catch {
+      // Cross-origin parent or no parent — fall through and play locally.
+    }
     return;
   }
 

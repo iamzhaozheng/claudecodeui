@@ -28,6 +28,7 @@ import {
 } from '../../shared/view/ui';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePaletteOps } from '../../contexts/PaletteOpsContext';
+import { sessionPath } from '../../utils/embedMode';
 import { SETTINGS_MAIN_TABS } from '../settings/constants/constants';
 import type { AppTab, Project } from '../../types/app';
 
@@ -280,7 +281,7 @@ export default function CommandPalette({
                   <CommandItem
                     key={s.id}
                     value={`${s.label} ${s.snippet ?? ''} ${s.id}`.trim()}
-                    onSelect={() => run(() => navigate(`/session/${s.id}`))}
+                    onSelect={() => run(() => navigate(sessionPath(s.id)))}
                   >
                     <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                     <div className="flex min-w-0 flex-1 flex-col">
