@@ -9,12 +9,22 @@ import type {
 } from '@/shared/types.js';
 import { buildDefaultProviderCurrentActiveModel } from '@/shared/utils.js';
 
+// Mirrors the alias whitelist baked into the Claude CLI binary (2.1.270):
+// `sonnet`, `opus`, `haiku`, `fable`, `best`, `opusplan`, plus the `[1m]`
+// suffixed forms. Bare model ids are deliberately absent — the CLI resolves
+// each alias to the newest model in that family (fable -> claude-fable-5-1,
+// opus -> claude-opus-5, sonnet -> claude-sonnet-5, haiku -> claude-haiku-4-5),
+// so listing an id here would only pin us to a version that goes stale.
+//
+// `[1m]` is only meaningful for models whose catalog entry sets
+// `supports_1m_suffix`. The 5-series Sonnet/Fable are already `native_1m`, so a
+// suffixed variant for them would be a no-op option — only `opus[1m]` survives.
 export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
   OPTIONS: [
     {
       value: 'default',
       label: 'Default (recommended)',
-      description: 'Use the Claude Code default model (currently Sonnet 4.6)',
+      description: 'Follow the Claude Code default for whichever model family the CLI selects',
       effort: {
         default: 'high',
         values: [
@@ -28,7 +38,37 @@ export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
     {
       value: 'fable',
       label: 'Fable',
-      description: 'Fable 5 · Most capable for your hardest and longest-running tasks · Uses your limits ~2× faster than Opus',
+      description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks · Uses your limits ~2× faster than Opus',
+      effort: {
+        default: 'high',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'xhigh' },
+          { value: 'max' },
+        ],
+      },
+    },
+    {
+      value: 'opus',
+      label: 'Opus',
+      description: 'Opus 5 · Best for everyday, complex tasks · $5/$25 per Mtok',
+      effort: {
+        default: 'high',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'xhigh' },
+          { value: 'max' },
+        ],
+      },
+    },
+    {
+      value: 'opus[1m]',
+      label: 'Opus (1M context)',
+      description: 'Opus 5 with the 1M context beta · For very long sessions · $5/$25 per Mtok',
       effort: {
         default: 'high',
         values: [
@@ -43,35 +83,7 @@ export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
     {
       value: "sonnet",
       label: "Sonnet",
-      description: "Sonnet 4.6 · Best for everyday tasks · $3/$15 per Mtok",
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'max' },
-        ],
-      },
-    },
-    {
-      value: 'sonnet[1m]',
-      label: 'Sonnet (1M context)',
-      description: 'Sonnet 4.6 for long sessions · $3/$15 per Mtok',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'max' },
-        ],
-      },
-    },
-    {
-      value: 'opus',
-      label: 'Opus',
-      description: 'Opus 4.8 · Best for everyday, complex tasks · ~2× usage vs Sonnet',
+      description: "Sonnet 5 · Best for everyday tasks · $2/$10 per Mtok",
       effort: {
         default: 'high',
         values: [
@@ -79,50 +91,6 @@ export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
           { value: 'medium' },
           { value: 'high' },
           { value: 'xhigh' },
-          { value: 'max' },
-        ],
-      },
-    },
-    {
-      value: 'opus[1m]',
-      label: 'Opus 4.8 (1M context)',
-      description: 'Opus 4.8 with 1M context · Most capable for complex work · $5/$25 per Mtok',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-        ],
-      },
-    },
-    {
-      value: 'claude-opus-5',
-      label: 'Opus 5',
-      description: 'Opus 5 · latest, most capable Opus (served by your gateway)',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
-          { value: 'xhigh' },
-          { value: 'max' },
-        ],
-      },
-    },
-    {
-      value: 'claude-sonnet-5',
-      label: 'Sonnet 5',
-      description: 'Sonnet 5 · latest Sonnet (served by your gateway)',
-      effort: {
-        default: 'high',
-        values: [
-          { value: 'low' },
-          { value: 'medium' },
-          { value: 'high' },
           { value: 'max' },
         ],
       },
