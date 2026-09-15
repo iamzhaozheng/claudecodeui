@@ -40,6 +40,62 @@ test('claude: injected skill bodies are hidden even without the isMeta flag', ()
   assert.deepEqual(persisted, []);
 });
 
+const IMAGE_DIMS_MARKER = '[Image: original 1206x2622, displayed at 920x2000. '
+  + 'Multiply coordinates by 1.31 to map to original image.]';
+
+test('claude: image attachment markers are hidden even without the isMeta flag', () => {
+  const provider = new ClaudeSessionsProvider();
+
+  // Same split-brain as the skill bodies above: persisted rows carry
+  // `isMeta`, the live stream does not, so a marker-only turn shows up as a
+  // user bubble during the run and disappears on reload.
+  const live = provider.normalizeMessage(
+    {
+      uuid: 'i1',
+      timestamp: '2026-09-15T10:56:01.000Z',
+      message: { role: 'user', content: IMAGE_DIMS_MARKER },
+    },
+    SESSION_ID,
+  );
+  assert.deepEqual(live, []);
+
+  // Several images in one turn concatenate their markers, so a prefix test
+  // would only catch the first.
+  const multiple = provider.normalizeMessage(
+    {
+      uuid: 'i2',
+      timestamp: '2026-09-15T10:56:01.000Z',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: '[Image: source: /tmp/a.png][Image: source: /tmp/b.png]',
+        }],
+      },
+    },
+    SESSION_ID,
+  );
+  assert.deepEqual(multiple, []);
+});
+
+test('claude: a real prompt carrying an image marker is still shown', () => {
+  const provider = new ClaudeSessionsProvider();
+
+  const messages = provider.normalizeMessage(
+    {
+      uuid: 'i3',
+      timestamp: '2026-09-15T10:56:01.000Z',
+      message: { role: 'user', content: `看这张图 ${IMAGE_DIMS_MARKER}` },
+    },
+    SESSION_ID,
+  );
+
+  // Only marker-*only* content is bookkeeping; the user's words must survive.
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].role, 'user');
+  assert.match(String(messages[0].content), /看这张图/);
+});
+
 test('claude: the Skill tool result itself still reaches the UI', () => {
   const provider = new ClaudeSessionsProvider();
 

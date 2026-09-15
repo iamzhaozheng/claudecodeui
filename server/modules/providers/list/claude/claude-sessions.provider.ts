@@ -228,7 +228,39 @@ const INTERNAL_CONTENT_PREFIXES = [
   'Base directory for this skill:',
 ] as const;
 
+/**
+ * Attachment markers the CLI injects for images the user attached, e.g.
+ * `[Image: original 1206x2622, displayed at 920x2000. Multiply coordinates by
+ * 1.31 ...]` or `[Image: source: /path/to.png]`. Several are concatenated when
+ * a turn carries multiple images, so this is matched globally rather than as a
+ * prefix.
+ */
+const IMAGE_MARKER = /\[Image:[^\]]*\]/g;
+
+/**
+ * True when the content is *nothing but* image markers.
+ *
+ * Deliberately not a prefix test: a marker-only row is bookkeeping and belongs
+ * with the other internal content, but the same marker can also trail a real
+ * prompt ("look at this screenshot [Image: source: ...]"), and dropping that
+ * would eat the user's actual words. Emptiness after stripping is what
+ * separates the two.
+ */
+function isImageMarkerOnly(content: string): boolean {
+  if (!content.includes('[Image:')) {
+    return false;
+  }
+  return content.replace(IMAGE_MARKER, '').trim().length === 0;
+}
+
 function isInternalContent(content: string): boolean {
+  // The `isMeta` flag catches these in persisted transcripts, but the live SDK
+  // stream omits it, so a marker-only turn would render as a user bubble during
+  // the run and then vanish on reload — the same split-brain the skill-body
+  // check above exists to fix.
+  if (isImageMarkerOnly(content)) {
+    return true;
+  }
   return INTERNAL_CONTENT_PREFIXES.some((prefix) => content.startsWith(prefix));
 }
 
