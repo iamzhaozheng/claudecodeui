@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { ArrowLeft, Columns3, Grid2x2 } from 'lucide-react';
 
@@ -26,6 +26,18 @@ const paneSrc = (basename: string, sessionId: string | null, index: number): str
 
 export default function GridView() {
   const { isMobile } = useDeviceSettings();
+
+  /*
+    Frozen at mount on purpose. `isMobile` tracks the live window width, so
+    reading it directly would redirect mid-session the moment the window
+    crossed the breakpoint — dragging the browser to a half-screen split or
+    unplugging an external display would silently throw the user out of the
+    grid and into whichever session the root route happened to land on.
+    Whether this is a phone cannot change while the page is open; the width
+    can, and a narrow window is handled by dropping to fewer columns instead.
+  */
+  const [startedOnMobile] = useState(() => isMobile);
+
   const {
     layout,
     effectiveCount,
@@ -96,10 +108,11 @@ export default function GridView() {
 
   const handleCount = useCallback((value: number) => setCount(value), [setCount]);
 
-  // A phone has no room to split. The shell is not itself in embed mode, so this
-  // reads the real window width.
-  if (isMobile) {
-    return <Navigate to="/" replace />;
+  // A phone has no room to split. Redirect only when the page opened on one:
+  // resizing a desktop window narrow drops to a single column instead (see
+  // `startedOnMobile`). No `replace`, so Back still returns here if it happens.
+  if (startedOnMobile) {
+    return <Navigate to="/" />;
   }
 
   const columns = renderColumns;
