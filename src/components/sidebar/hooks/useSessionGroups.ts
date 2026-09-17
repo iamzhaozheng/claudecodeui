@@ -95,13 +95,21 @@ export function useSessionGroups() {
                 projectId: member.projectId ?? null,
                 provider: member.provider ?? null,
                 position: cleaned.length,
+                // The renderer hides members it cannot prove exist (see
+                // `visibleMembers` in SidebarGroupsView). A just-added session
+                // is usually absent from the paginated project list, so without
+                // this flag the optimistic row is filtered out and the group
+                // looks unchanged until some unrelated refresh happens to fire.
+                exists: true,
               },
             ],
           };
         }),
       );
-      const res = await api.addSessionToGroup(groupId, member);
-      if (!res.ok) void refresh();
+      await api.addSessionToGroup(groupId, member);
+      // Resync either way: on failure to undo the optimistic row, on success to
+      // replace it with the server's copy (name, canonical position).
+      void refresh();
     },
     [refresh],
   );

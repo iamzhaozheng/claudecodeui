@@ -957,7 +957,12 @@ export function useProjectsState({
       }
     }
 
-    if (selectedSession?.id === sessionId) {
+    // Already showing this session *and* we know which project owns it —
+    // nothing left to resolve. The `selectedProject` half matters: a session
+    // can be selected before its project is (new session created inside a
+    // group), and skipping the lookup then would leave the main area stuck on
+    // the empty "Choose Your Project" state with no second chance to recover.
+    if (selectedSession?.id === sessionId && selectedProject) {
       return;
     }
 
@@ -1080,6 +1085,20 @@ export function useProjectsState({
     (session: ProjectSession) => {
       clearSessionAttention(session.id);
       setSelectedSession(session);
+
+      // The sidebar tags each pick with its owning project. Adopt it here: the
+      // URL-driven backfill below bails out once `selectedSession` already
+      // matches the id, so a session opened before its project was ever
+      // selected (new session created inside a group, deep link from the
+      // groups view) would otherwise leave `selectedProject` null forever and
+      // strand the main area on the "Choose Your Project" empty state.
+      const taggedProjectId = session.__projectId;
+      if (taggedProjectId && selectedProjectRef.current?.projectId !== taggedProjectId) {
+        const owning = projectsRef.current.find((candidate) => candidate.projectId === taggedProjectId);
+        if (owning) {
+          setSelectedProject(owning);
+        }
+      }
 
       if (activeTab === 'tasks' || activeTab === 'browser') {
         setActiveTab('chat');
