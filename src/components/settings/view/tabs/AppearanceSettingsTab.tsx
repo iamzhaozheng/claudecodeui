@@ -6,6 +6,7 @@ import SettingsCard from '../SettingsCard';
 import SettingsRow from '../SettingsRow';
 import SettingsSection from '../SettingsSection';
 import SettingsToggle from '../SettingsToggle';
+import { useUiPreferences } from '../../../../hooks/useUiPreferences';
 
 type AppearanceSettingsTabProps = {
   projectSortOrder: ProjectSortOrder;
@@ -27,6 +28,7 @@ export default function AppearanceSettingsTab({
   onCodeEditorFontSizeChange,
 }: AppearanceSettingsTabProps) {
   const { t } = useTranslation('settings');
+  const { preferences, setPreference } = useUiPreferences();
 
   return (
     <div className="space-y-8">
@@ -44,6 +46,41 @@ export default function AppearanceSettingsTab({
       <SettingsSection title={t('mainTabs.appearance')}>
         <SettingsCard>
           <LanguageSelector />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('appearanceSettings.toolDisplay.title')}>
+        <SettingsCard divided>
+          <SettingsRow label={t('appearanceSettings.toolDisplay.showRawParameters.label')}>
+            <SettingsToggle
+              checked={preferences.showRawParameters}
+              onChange={(value) => setPreference('showRawParameters', value)}
+              ariaLabel={t('appearanceSettings.toolDisplay.showRawParameters.label')}
+            />
+          </SettingsRow>
+
+          <SettingsRow label={t('appearanceSettings.toolDisplay.showThinking.label')}>
+            <SettingsToggle
+              checked={preferences.showThinking}
+              onChange={(value) => setPreference('showThinking', value)}
+              ariaLabel={t('appearanceSettings.toolDisplay.showThinking.label')}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('appearanceSettings.inputSettings.title')}>
+        <SettingsCard>
+          <SettingsRow
+            label={t('appearanceSettings.inputSettings.sendByCtrlEnter.label')}
+            description={t('appearanceSettings.inputSettings.sendByCtrlEnter.description')}
+          >
+            <SettingsToggle
+              checked={preferences.sendByCtrlEnter}
+              onChange={(value) => setPreference('sendByCtrlEnter', value)}
+              ariaLabel={t('appearanceSettings.inputSettings.sendByCtrlEnter.label')}
+            />
+          </SettingsRow>
         </SettingsCard>
       </SettingsSection>
 

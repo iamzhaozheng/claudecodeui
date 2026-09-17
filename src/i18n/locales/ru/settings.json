@@ -49,26 +49,6 @@
     "resetToDefaults": "Сбросить к значениям по умолчанию",
     "cancelChanges": "Отменить изменения"
   },
-  "quickSettings": {
-    "title": "Быстрые настройки",
-    "sections": {
-      "appearance": "Внешний вид",
-      "toolDisplay": "Отображение инструментов",
-      "inputSettings": "Настройки ввода"
-    },
-    "darkMode": "Темная тема",
-    "showRawParameters": "Показывать сырые параметры",
-    "showThinking": "Показывать размышления",
-    "sendByCtrlEnter": "Отправка по Ctrl+Enter",
-    "sendByCtrlEnterDescription": "Когда включено, нажатие Ctrl+Enter будет отправлять сообщение вместо просто Enter. Это полезно для пользователей IME, чтобы избежать случайной отправки.",
-    "dragHandle": {
-      "dragging": "Перетаскивание ручки",
-      "closePanel": "Закрыть панель настроек",
-      "openPanel": "Открыть панель настроек",
-      "draggingStatus": "Перетаскивание...",
-      "toggleAndMove": "Нажмите для переключения, перетащите для перемещения"
-    }
-  },
   "terminalShortcuts": {
     "title": "Горячие клавиши терминала",
     "sectionKeys": "Клавиши",
@@ -152,6 +132,22 @@
       "fontSize": {
         "label": "Размер шрифта",
         "description": "Размер шрифта редактора в пикселях"
+      }
+    },
+    "toolDisplay": {
+      "title": "Отображение инструментов",
+      "showRawParameters": {
+        "label": "Показывать сырые параметры"
+      },
+      "showThinking": {
+        "label": "Показывать размышления"
+      }
+    },
+    "inputSettings": {
+      "title": "Настройки ввода",
+      "sendByCtrlEnter": {
+        "label": "Отправка по Ctrl+Enter",
+        "description": "Когда включено, нажатие Ctrl+Enter будет отправлять сообщение вместо просто Enter. Это полезно для пользователей IME, чтобы избежать случайной отправки."
       }
     }
   },
