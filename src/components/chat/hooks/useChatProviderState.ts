@@ -16,8 +16,13 @@ import {
   toProviderEffortOptions,
 } from '../constants/providerEffort';
 
+// What a new chat starts on, per provider, before the user picks anything.
+// Claude deliberately does not use the catalog's own `DEFAULT` ('default',
+// meaning "let the CLI choose"): that value doubles as the "no model recorded"
+// sentinel server-side, so naming it here would leave new sessions on whatever
+// the CLI happens to prefer. Sonnet is the explicit choice.
 const FALLBACK_DEFAULT_MODEL: Record<LLMProvider, string> = {
-  claude: 'default',
+  claude: 'sonnet',
   cursor: 'gpt-5.3-codex',
   codex: 'gpt-5.4',
   opencode: 'anthropic/claude-sonnet-4-5',
