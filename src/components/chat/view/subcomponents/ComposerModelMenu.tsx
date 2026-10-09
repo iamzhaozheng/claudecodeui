@@ -26,10 +26,7 @@ interface ComposerModelMenuProps {
   /** Model catalog for the active provider; empty hides the section. */
   modelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
-  /** Codex models offered when continuing this conversation in a new GPT chat. */
-  continuationModelOptions?: ProviderModelOption[];
-  continuationDefaultModel?: string;
-  onContinueWithModel?: (model: string) => void;
+  onConvertToGpt?: () => void;
   modelsLoading: boolean;
 }
 
@@ -40,16 +37,13 @@ export default function ComposerModelMenu({
   model,
   modelOptions,
   onSelectModel,
-  continuationModelOptions = [],
-  continuationDefaultModel,
-  onContinueWithModel,
+  onConvertToGpt,
   modelsLoading,
 }: ComposerModelMenuProps) {
   const { t } = useTranslation('chat');
   const [isOpen, setIsOpen] = useState(false);
   const [isModelSectionOpen, setIsModelSectionOpen] = useState(false);
   const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
-  const [conversionModel, setConversionModel] = useState('');
   const close = useCallback(() => setIsOpen(false), []);
   const { triggerRef, menuRef, anchor, updateAnchor } = useComposerMenuAnchor(isOpen, close);
 
@@ -76,7 +70,7 @@ export default function ComposerModelMenu({
 
   const hasEffortSection = resolvedEffortOptions.length > 0;
   const hasModelSection = modelOptions.length > 0 || modelsLoading;
-  const canConvertToGpt = Boolean(onContinueWithModel && continuationModelOptions.length > 0);
+  const canConvertToGpt = Boolean(onConvertToGpt);
   if (!hasEffortSection && !hasModelSection && !canConvertToGpt) {
     return null;
   }
@@ -183,10 +177,6 @@ export default function ComposerModelMenu({
                 })}
                 isSelected={false}
                 onSelect={() => {
-                  const defaultOption = continuationModelOptions.find(
-                    (option) => option.value === continuationDefaultModel,
-                  ) ?? continuationModelOptions[0];
-                  setConversionModel(defaultOption.value);
                   setIsOpen(false);
                   setIsConversionDialogOpen(true);
                 }}
@@ -208,31 +198,17 @@ export default function ComposerModelMenu({
               defaultValue: 'A new GPT chat will receive the text history. The original chat stays here. If it is in a group, the new chat joins that group too. Attachments are listed by name only.',
             })}
           </p>
-          <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="gpt-conversion-model">
-            {t('composer.convertToGptModel', { defaultValue: 'GPT model' })}
-          </label>
-          <select
-            id="gpt-conversion-model"
-            value={conversionModel}
-            onChange={(event) => setConversionModel(event.target.value)}
-            className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
-          >
-            {continuationModelOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label || option.value}</option>
-            ))}
-          </select>
+          <p className="mt-4 rounded-md bg-muted/50 px-3 py-2 text-sm text-foreground">
+            {t('composer.convertToGptUsesLuna', { defaultValue: 'Uses the latest available Luna model automatically.' })}
+          </p>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsConversionDialogOpen(false)}>
               {t('composer.convertToGptCancel', { defaultValue: 'Cancel' })}
             </Button>
-            <Button
-              disabled={!conversionModel}
-              onClick={() => {
-                if (!conversionModel || !onContinueWithModel) return;
-                setIsConversionDialogOpen(false);
-                onContinueWithModel(conversionModel);
-              }}
-            >
+            <Button onClick={() => {
+              setIsConversionDialogOpen(false);
+              onConvertToGpt?.();
+            }}>
               {t('composer.convertToGptConfirm', { defaultValue: 'Create GPT chat' })}
             </Button>
           </div>

@@ -74,9 +74,7 @@ interface ChatComposerProps {
   model: string;
   availableModelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
-  continuationModelOptions?: ProviderModelOption[];
-  continuationDefaultModel?: string;
-  onContinueWithModel?: (model: string) => void;
+  onConvertToGpt?: () => void;
   modelsLoading: boolean;
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
@@ -141,9 +139,7 @@ export default function ChatComposer({
   model,
   availableModelOptions,
   onSelectModel,
-  continuationModelOptions,
-  continuationDefaultModel,
-  onContinueWithModel,
+  onConvertToGpt,
   modelsLoading,
   tokenBudget,
   onShowTokenUsage,
@@ -444,9 +440,7 @@ export default function ChatComposer({
               model={model}
               modelOptions={availableModelOptions}
               onSelectModel={onSelectModel}
-              continuationModelOptions={continuationModelOptions}
-              continuationDefaultModel={continuationDefaultModel}
-              onContinueWithModel={onContinueWithModel}
+              onConvertToGpt={onConvertToGpt}
               modelsLoading={modelsLoading}
             />
 

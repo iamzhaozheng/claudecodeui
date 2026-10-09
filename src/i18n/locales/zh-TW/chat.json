@@ -260,7 +260,7 @@
     "convertToGptHint": "根據目前對話建立 GPT 續聊",
     "convertToGptTitle": "轉成 GPT 對話？",
     "convertToGptDescription": "將文字歷史帶入新的 GPT 對話。原對話保留；若原對話在分組中，新對話也會加入該分組。附件只保留名稱。",
-    "convertToGptModel": "GPT 模型",
+    "convertToGptUsesLuna": "自動使用最新的 Luna 模型。",
     "convertToGptCancel": "取消",
     "convertToGptConfirm": "確認轉換"
   }

@@ -6,6 +6,7 @@ import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { useWebSocket } from '../../../contexts/WebSocketContext';
 import PermissionContext from '../../../contexts/PermissionContext';
 import type { ChatInterfaceProps, PermissionMode, Provider  } from '../types/types';
+import type { ProviderModelOption } from '../../../types/app';
 import { useChatProviderState } from '../hooks/useChatProviderState';
 import { useChatSessionState } from '../hooks/useChatSessionState';
 import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
@@ -20,6 +21,15 @@ import ChatComposer from './subcomponents/ChatComposer';
 import CommandResultModal from './subcomponents/CommandResultModal';
 
 const MAX_IMPORTED_CONTEXT_CHARS = 120_000;
+
+function pickLatestLunaModel(options: ProviderModelOption[]): string | null {
+  const candidates = options.flatMap(({ value }) => {
+    const version = /^gpt-(\d+)(?:\.(\d+))?-luna$/i.exec(value);
+    return version ? [{ value, major: Number(version[1]), minor: Number(version[2] ?? 0) }] : [];
+  });
+  candidates.sort((left, right) => right.major - left.major || right.minor - left.minor);
+  return candidates[0]?.value ?? null;
+}
 
 function buildGptContinuationPrompt(
   messages: NormalizedMessage[],
@@ -359,7 +369,7 @@ function ChatInterface({
     }
   }, [currentSessionId, provider, selectProviderModel, selectedSession?.id]);
 
-  const handleContinueWithGpt = useCallback(async (model: string) => {
+  const handleContinueWithGpt = useCallback(async () => {
     if (!selectedProject || continuingWithGptRef.current) return;
     continuingWithGptRef.current = true;
     let newSessionId: string | null = null;
@@ -374,12 +384,14 @@ function ChatInterface({
       const sourceSessionId = currentSessionId || selectedSession?.id;
       if (!sourceSessionId) throw new Error('请先打开要转换的对话。');
       let history: NormalizedMessage[] = [];
-      const [historyResponse, groupsResponse] = await Promise.all([
+      const [historyResponse, groupsResponse, modelsResponse] = await Promise.all([
         authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(sourceSessionId)}/messages`),
         api.listSessionGroups(),
+        authenticatedFetch('/api/providers/codex/models?bypassCache=true'),
       ]);
       if (!historyResponse.ok) throw new Error('读取原对话失败。');
       if (!groupsResponse.ok) throw new Error('读取原对话分组失败。');
+      if (!modelsResponse.ok) throw new Error('读取 Luna 模型列表失败。');
       const historyBody = await historyResponse.json();
       history = historyBody?.data?.messages ?? [];
       const groupsBody = await groupsResponse.json();
@@ -389,6 +401,10 @@ function ChatInterface({
         group.members?.some((member) => member.sessionId === sourceSessionId),
       );
       sourceGroupId = typeof sourceGroup?.id === 'number' ? sourceGroup.id : null;
+      const modelsBody = await modelsResponse.json();
+      const modelOptions = modelsBody?.data?.models?.OPTIONS;
+      const model = pickLatestLunaModel(Array.isArray(modelOptions) ? modelOptions : []);
+      if (!model) throw new Error('当前 Codex 模型列表中没有 Luna，请更新 Codex 后重试。');
 
       const sourceName = selectedSession?.summary || selectedSession?.name || selectedSession?.title || '原对话';
       const summary = `GPT 续聊 · ${sourceName}`.slice(0, 80);
@@ -567,10 +583,8 @@ function ChatInterface({
           model={currentProviderModel}
           availableModelOptions={currentProviderModelOptions}
           onSelectModel={handleSelectComposerModel}
-          continuationModelOptions={provider !== 'codex' && (currentSessionId || selectedSession?.id)
-            ? providerModelCatalog.codex?.OPTIONS ?? [] : []}
-          continuationDefaultModel={providerModelCatalog.codex?.DEFAULT}
-          onContinueWithModel={provider === 'codex' ? undefined : handleContinueWithGpt}
+          onConvertToGpt={provider !== 'codex' && (currentSessionId || selectedSession?.id)
+            ? handleContinueWithGpt : undefined}
           modelsLoading={providerModelsLoading}
           tokenBudget={tokenBudget}
           onShowTokenUsage={showCostModal}

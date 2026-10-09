@@ -148,7 +148,7 @@
     "convertToGptHint": "Create a GPT chat from this conversation",
     "convertToGptTitle": "Continue with GPT?",
     "convertToGptDescription": "A new GPT chat will receive the text history. The original chat stays here. If it is in a group, the new chat joins that group too. Attachments are listed by name only.",
-    "convertToGptModel": "GPT model",
+    "convertToGptUsesLuna": "Uses the latest available Luna model automatically.",
     "convertToGptCancel": "Cancel",
     "convertToGptConfirm": "Create GPT chat",
     "permissionHeading": "How should {{provider}} actions be approved?"
