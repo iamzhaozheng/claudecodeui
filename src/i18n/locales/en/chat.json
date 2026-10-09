@@ -144,8 +144,13 @@
     "effortDefault": "Default",
     "loadingModels": "Loading models…",
     "modelMenu": "Select model and reasoning effort",
-    "continueWithGpt": "Continue with GPT in a new chat",
-    "copiesConversationContext": "Starts a new chat with this conversation as context",
+    "convertToGpt": "Continue with GPT",
+    "convertToGptHint": "Create a GPT chat from this conversation",
+    "convertToGptTitle": "Continue with GPT?",
+    "convertToGptDescription": "A new GPT chat will receive the text history. The original chat stays here. If it is in a group, the new chat joins that group too. Attachments are listed by name only.",
+    "convertToGptModel": "GPT model",
+    "convertToGptCancel": "Cancel",
+    "convertToGptConfirm": "Create GPT chat",
     "permissionHeading": "How should {{provider}} actions be approved?"
   },
   "providerSelection": {

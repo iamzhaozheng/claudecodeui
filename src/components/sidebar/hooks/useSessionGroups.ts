@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../utils/api';
+import { SESSION_GROUPS_CHANGED_EVENT } from '../../../utils/sessionGroups';
 
 export interface SessionGroupMemberRef {
   sessionId: string;
@@ -49,6 +50,12 @@ export function useSessionGroups() {
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const handleExternalChange = () => { void refresh(); };
+    window.addEventListener(SESSION_GROUPS_CHANGED_EVENT, handleExternalChange);
+    return () => window.removeEventListener(SESSION_GROUPS_CHANGED_EVENT, handleExternalChange);
   }, [refresh]);
 
   const createGroup = useCallback(async (name: string): Promise<number | null> => {

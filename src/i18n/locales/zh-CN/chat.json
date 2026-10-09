@@ -220,7 +220,12 @@
     "tookDuration": "耗时 {{duration}}"
   },
   "composer": {
-    "continueWithGpt": "用 GPT 在新对话中继续",
-    "copiesConversationContext": "新建对话并带入当前对话的上下文"
+    "convertToGpt": "转成 GPT",
+    "convertToGptHint": "基于当前对话创建 GPT 续聊",
+    "convertToGptTitle": "转成 GPT 对话？",
+    "convertToGptDescription": "将文字历史带入新的 GPT 对话。原对话保留；若原对话在分组中，新对话也会加入该分组。附件只保留名称。",
+    "convertToGptModel": "GPT 模型",
+    "convertToGptCancel": "取消",
+    "convertToGptConfirm": "确认转换"
   }
 }

@@ -12,7 +12,8 @@ import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
 import { useSessionStore } from '../../../stores/useSessionStore';
 import type { NormalizedMessage } from '../../../stores/useSessionStore';
-import { authenticatedFetch } from '../../../utils/api';
+import { api, authenticatedFetch } from '../../../utils/api';
+import { SESSION_GROUPS_CHANGED_EVENT } from '../../../utils/sessionGroups';
 
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
@@ -362,6 +363,7 @@ function ChatInterface({
     if (!selectedProject || continuingWithGptRef.current) return;
     continuingWithGptRef.current = true;
     let newSessionId: string | null = null;
+    let sourceGroupId: number | null = null;
     let sent = false;
 
     try {
@@ -370,15 +372,23 @@ function ChatInterface({
       }
 
       const sourceSessionId = currentSessionId || selectedSession?.id;
+      if (!sourceSessionId) throw new Error('请先打开要转换的对话。');
       let history: NormalizedMessage[] = [];
-      if (sourceSessionId) {
-        const response = await authenticatedFetch(
-          `/api/providers/sessions/${encodeURIComponent(sourceSessionId)}/messages`,
-        );
-        if (!response.ok) throw new Error('读取原对话失败。');
-        const body = await response.json();
-        history = body?.data?.messages ?? [];
-      }
+      const [historyResponse, groupsResponse] = await Promise.all([
+        authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(sourceSessionId)}/messages`),
+        api.listSessionGroups(),
+      ]);
+      if (!historyResponse.ok) throw new Error('读取原对话失败。');
+      if (!groupsResponse.ok) throw new Error('读取原对话分组失败。');
+      const historyBody = await historyResponse.json();
+      history = historyBody?.data?.messages ?? [];
+      const groupsBody = await groupsResponse.json();
+      const groups = groupsBody?.data?.groups;
+      if (!Array.isArray(groups)) throw new Error('读取原对话分组失败。');
+      const sourceGroup = groups.find((group: { id: number; members?: { sessionId: string }[] }) =>
+        group.members?.some((member) => member.sessionId === sourceSessionId),
+      );
+      sourceGroupId = typeof sourceGroup?.id === 'number' ? sourceGroup.id : null;
 
       const sourceName = selectedSession?.summary || selectedSession?.name || selectedSession?.title || '原对话';
       const summary = `GPT 续聊 · ${sourceName}`.slice(0, 80);
@@ -401,6 +411,15 @@ function ChatInterface({
         body: JSON.stringify({ summary }),
       });
 
+      if (sourceGroupId !== null) {
+        const groupResponse = await api.addSessionToGroup(sourceGroupId, {
+          sessionId: newSessionId,
+          projectId: selectedProject.projectId,
+          provider: 'codex',
+        });
+        if (!groupResponse.ok) throw new Error('将 GPT 对话加入原分组失败。');
+      }
+
       if (prompt) {
         sent = sendMessage({
           type: 'chat.send',
@@ -416,9 +435,15 @@ function ChatInterface({
       localStorage.setItem('selected-provider', 'codex');
       if (input.trim()) setInput('');
       handleSessionEstablished(newSessionId, { provider: 'codex', project: selectedProject, summary });
+      if (sourceGroupId !== null) {
+        window.dispatchEvent(new Event(SESSION_GROUPS_CHANGED_EVENT));
+      }
     } catch (error) {
       if (newSessionId && !sent) {
-        void authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(newSessionId)}`, {
+        if (sourceGroupId !== null) {
+          await api.removeSessionFromGroup(sourceGroupId, newSessionId).catch(() => undefined);
+        }
+        await authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(newSessionId)}`, {
           method: 'DELETE',
         }).catch(() => undefined);
       }
@@ -542,7 +567,9 @@ function ChatInterface({
           model={currentProviderModel}
           availableModelOptions={currentProviderModelOptions}
           onSelectModel={handleSelectComposerModel}
-          continuationModelOptions={provider === 'codex' ? [] : providerModelCatalog.codex?.OPTIONS ?? []}
+          continuationModelOptions={provider !== 'codex' && (currentSessionId || selectedSession?.id)
+            ? providerModelCatalog.codex?.OPTIONS ?? [] : []}
+          continuationDefaultModel={providerModelCatalog.codex?.DEFAULT}
           onContinueWithModel={provider === 'codex' ? undefined : handleContinueWithGpt}
           modelsLoading={providerModelsLoading}
           tokenBudget={tokenBudget}
