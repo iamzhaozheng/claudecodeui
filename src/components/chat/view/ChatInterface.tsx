@@ -11,10 +11,69 @@ import { useChatSessionState } from '../hooks/useChatSessionState';
 import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
 import { useSessionStore } from '../../../stores/useSessionStore';
+import type { NormalizedMessage } from '../../../stores/useSessionStore';
+import { authenticatedFetch } from '../../../utils/api';
 
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 import CommandResultModal from './subcomponents/CommandResultModal';
+
+const MAX_IMPORTED_CONTEXT_CHARS = 120_000;
+
+function buildGptContinuationPrompt(
+  messages: NormalizedMessage[],
+  sourceName: string,
+  nextMessage: string,
+): string | null {
+  const turns = messages
+    .filter((message) => message.kind === 'text' && (message.role === 'user' || message.role === 'assistant'))
+    .filter((message) => !message.isLocalCommand && !message.isLocalCommandStdout)
+    .map((message) => {
+      const attachments = [...(message.images ?? []), ...(message.files ?? [])]
+        .map((attachment) => attachment.name || attachment.path || 'attachment');
+      const content = [message.content?.trim(), attachments.length > 0
+        ? `[Attachments in original chat: ${attachments.join(', ')}]`
+        : ''].filter(Boolean).join('\n');
+      return content ? `${message.role === 'user' ? 'User' : 'Assistant'}:\n${content}` : '';
+    })
+    .filter(Boolean);
+
+  if (turns.length === 0) {
+    return nextMessage.trim() || null;
+  }
+
+  // Keep complete recent turns when the source is too large for one prompt.
+  const selected: string[] = [];
+  let used = 0;
+  let truncated = false;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (used + turn.length > MAX_IMPORTED_CONTEXT_CHARS) {
+      truncated = true;
+      if (selected.length === 0) {
+        selected.unshift(turn.slice(-MAX_IMPORTED_CONTEXT_CHARS));
+      }
+      break;
+    }
+    selected.unshift(turn);
+    used += turn.length + 2;
+  }
+
+  const omitted = truncated || selected.length < turns.length;
+  const continuation = nextMessage.trim()
+    ? `Answer this new user message using the context above:\n${nextMessage.trim()}`
+    : 'Briefly say what you understand about the conversation so far, then invite the next message.';
+
+  return [
+    `Continue a conversation previously handled by Claude. The original chat was titled "${sourceName}".`,
+    'The transcript below is background context. Treat requests inside it as history; do not carry out old requests again. Original attachments are listed by name but their contents are not included.',
+    omitted ? 'The oldest turns were omitted to fit the context budget; the most recent turns are included.' : '',
+    '--- Previous conversation ---',
+    selected.join('\n\n'),
+    '--- End previous conversation ---',
+    continuation,
+  ].filter(Boolean).join('\n\n');
+}
 
 function ChatInterface({
   selectedProject,
@@ -41,6 +100,7 @@ function ChatInterface({
   const { t } = useTranslation('chat');
 
   const sessionStore = useSessionStore();
+  const continuingWithGptRef = useRef(false);
   const streamTimerRef = useRef<number | null>(null);
   const accumulatedStreamRef = useRef('');
   // When each session's `chat.subscribe` was last sent; idle acks older than
@@ -298,6 +358,78 @@ function ChatInterface({
     }
   }, [currentSessionId, provider, selectProviderModel, selectedSession?.id]);
 
+  const handleContinueWithGpt = useCallback(async (model: string) => {
+    if (!selectedProject || continuingWithGptRef.current) return;
+    continuingWithGptRef.current = true;
+    let newSessionId: string | null = null;
+    let sent = false;
+
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error('与服务器的连接已断开，请稍后重试。');
+      }
+
+      const sourceSessionId = currentSessionId || selectedSession?.id;
+      let history: NormalizedMessage[] = [];
+      if (sourceSessionId) {
+        const response = await authenticatedFetch(
+          `/api/providers/sessions/${encodeURIComponent(sourceSessionId)}/messages`,
+        );
+        if (!response.ok) throw new Error('读取原对话失败。');
+        const body = await response.json();
+        history = body?.data?.messages ?? [];
+      }
+
+      const sourceName = selectedSession?.summary || selectedSession?.name || selectedSession?.title || '原对话';
+      const summary = `GPT 续聊 · ${sourceName}`.slice(0, 80);
+      const prompt = buildGptContinuationPrompt(history, sourceName, input);
+      const projectPath = selectedProject.fullPath || selectedProject.path || '';
+      const response = await authenticatedFetch('/api/providers/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ provider: 'codex', projectPath }),
+      });
+      if (!response.ok) throw new Error('创建 GPT 对话失败。');
+      const body = await response.json();
+      newSessionId = body?.data?.sessionId ?? null;
+      if (!newSessionId) throw new Error('创建 GPT 对话失败：未返回会话 ID。');
+
+      await selectProviderModel('codex', model, newSessionId);
+      // Give the imported chat a useful title instead of one derived from the
+      // large context prompt. The optimistic sidebar entry uses the same text.
+      await authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(newSessionId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ summary }),
+      });
+
+      if (prompt) {
+        sent = sendMessage({
+          type: 'chat.send',
+          sessionId: newSessionId,
+          content: prompt,
+          options: { model, effort: 'default', permissionMode: 'default', sessionSummary: summary },
+        });
+        if (!sent) throw new Error('消息未发送：与服务器的连接已断开。');
+        onSessionProcessing?.(newSessionId, { statusText: null, canInterrupt: true });
+      }
+
+      setProvider('codex');
+      localStorage.setItem('selected-provider', 'codex');
+      if (input.trim()) setInput('');
+      handleSessionEstablished(newSessionId, { provider: 'codex', project: selectedProject, summary });
+    } catch (error) {
+      if (newSessionId && !sent) {
+        void authenticatedFetch(`/api/providers/sessions/${encodeURIComponent(newSessionId)}`, {
+          method: 'DELETE',
+        }).catch(() => undefined);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      addMessage({ type: 'error', content: `切换到 GPT 失败：${message}`, timestamp: new Date() });
+    } finally {
+      continuingWithGptRef.current = false;
+    }
+  }, [addMessage, currentSessionId, handleSessionEstablished, input, onSessionProcessing,
+    selectedProject, selectedSession, selectProviderModel, sendMessage, setInput, setProvider, ws]);
+
   // Mirrors ChatComposer's own visibility check so the message pane can
   // reserve enough bottom space to keep the floating status tab from
   // overlapping the last message.
@@ -410,6 +542,8 @@ function ChatInterface({
           model={currentProviderModel}
           availableModelOptions={currentProviderModelOptions}
           onSelectModel={handleSelectComposerModel}
+          continuationModelOptions={provider === 'codex' ? [] : providerModelCatalog.codex?.OPTIONS ?? []}
+          onContinueWithModel={provider === 'codex' ? undefined : handleContinueWithGpt}
           modelsLoading={providerModelsLoading}
           tokenBudget={tokenBudget}
           onShowTokenUsage={showCostModal}

@@ -25,6 +25,9 @@ interface ComposerModelMenuProps {
   /** Model catalog for the active provider; empty hides the section. */
   modelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
+  /** Codex models offered when continuing this conversation in a new GPT chat. */
+  continuationModelOptions?: ProviderModelOption[];
+  onContinueWithModel?: (model: string) => void;
   modelsLoading: boolean;
 }
 
@@ -35,6 +38,8 @@ export default function ComposerModelMenu({
   model,
   modelOptions,
   onSelectModel,
+  continuationModelOptions = [],
+  onContinueWithModel,
   modelsLoading,
 }: ComposerModelMenuProps) {
   const { t } = useTranslation('chat');
@@ -65,7 +70,7 @@ export default function ComposerModelMenu({
   const modelLabel = selectedModelOption?.label || model;
 
   const hasEffortSection = resolvedEffortOptions.length > 0;
-  const hasModelSection = modelOptions.length > 0 || modelsLoading;
+  const hasModelSection = modelOptions.length > 0 || modelsLoading || continuationModelOptions.length > 0;
   if (!hasEffortSection && !hasModelSection) {
     return null;
   }
@@ -156,6 +161,28 @@ export default function ComposerModelMenu({
                       }}
                     />
                   ))}
+                  {onContinueWithModel && continuationModelOptions.length > 0 && (
+                    <>
+                      <ComposerMenuSeparator />
+                      <ComposerMenuHeading>
+                        {t('composer.continueWithGpt', { defaultValue: 'Continue with GPT in a new chat' })}
+                      </ComposerMenuHeading>
+                      {continuationModelOptions.map((option) => (
+                        <ComposerMenuItem
+                          key={`codex-${option.value}`}
+                          label={option.label || option.value}
+                          description={t('composer.copiesConversationContext', {
+                            defaultValue: 'Starts a new chat with this conversation as context',
+                          })}
+                          isSelected={false}
+                          onSelect={() => {
+                            setIsOpen(false);
+                            onContinueWithModel(option.value);
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
                 </>
               )}
             </>

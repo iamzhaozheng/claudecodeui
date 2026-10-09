@@ -254,5 +254,9 @@
   },
   "message": {
     "tookDuration": "耗時 {{duration}}"
+  },
+  "composer": {
+    "continueWithGpt": "用 GPT 在新對話中繼續",
+    "copiesConversationContext": "建立新對話並帶入目前對話的上下文"
   }
 }

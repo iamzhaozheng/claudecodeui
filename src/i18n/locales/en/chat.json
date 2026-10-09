@@ -144,6 +144,8 @@
     "effortDefault": "Default",
     "loadingModels": "Loading models…",
     "modelMenu": "Select model and reasoning effort",
+    "continueWithGpt": "Continue with GPT in a new chat",
+    "copiesConversationContext": "Starts a new chat with this conversation as context",
     "permissionHeading": "How should {{provider}} actions be approved?"
   },
   "providerSelection": {
