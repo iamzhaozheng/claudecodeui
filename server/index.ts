@@ -204,8 +204,8 @@ app.use(express.static(path.join(APP_ROOT, 'public')));
 // Add cache control: HTML files should not be cached, but assets can be cached
 app.use(express.static(path.join(APP_ROOT, 'dist'), {
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.html')) {
-            // Prevent HTML caching to avoid service worker issues after builds
+        if (filePath.endsWith('.html') || path.basename(filePath) === 'sw.js') {
+            // HTML and the unversioned service worker must be revalidated after builds.
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
