@@ -27,6 +27,7 @@ interface ComposerModelMenuProps {
   modelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
   onConvertToGpt?: () => void;
+  isGptSession?: boolean;
   modelsLoading: boolean;
 }
 
@@ -38,6 +39,7 @@ export default function ComposerModelMenu({
   modelOptions,
   onSelectModel,
   onConvertToGpt,
+  isGptSession = false,
   modelsLoading,
 }: ComposerModelMenuProps) {
   const { t } = useTranslation('chat');
@@ -71,6 +73,12 @@ export default function ComposerModelMenu({
   const hasEffortSection = resolvedEffortOptions.length > 0;
   const hasModelSection = modelOptions.length > 0 || modelsLoading;
   const canConvertToGpt = Boolean(onConvertToGpt);
+  const continuationLabel = isGptSession
+    ? t('composer.newGptContinuation', { defaultValue: 'Continue in a new GPT chat' })
+    : t('composer.convertToGpt', { defaultValue: 'Continue with GPT' });
+  const continuationTitle = isGptSession
+    ? t('composer.newGptContinuationTitle', { defaultValue: 'Continue in a new GPT chat?' })
+    : t('composer.convertToGptTitle', { defaultValue: 'Continue with GPT?' });
   if (!hasEffortSection && !hasModelSection && !canConvertToGpt) {
     return null;
   }
@@ -171,7 +179,7 @@ export default function ComposerModelMenu({
               {(hasEffortSection || hasModelSection) && <ComposerMenuSeparator />}
               <ComposerMenuItem
                 role="menuitem"
-                label={t('composer.convertToGpt', { defaultValue: 'Continue with GPT' })}
+                label={continuationLabel}
                 description={t('composer.convertToGptHint', {
                   defaultValue: 'Create a GPT chat from this conversation',
                 })}
@@ -189,9 +197,9 @@ export default function ComposerModelMenu({
 
       <Dialog open={isConversionDialogOpen} onOpenChange={setIsConversionDialogOpen}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-md p-5">
-          <DialogTitle>{t('composer.convertToGptTitle', { defaultValue: 'Continue with GPT?' })}</DialogTitle>
+          <DialogTitle>{continuationTitle}</DialogTitle>
           <h2 className="text-lg font-semibold text-foreground">
-            {t('composer.convertToGptTitle', { defaultValue: 'Continue with GPT?' })}
+            {continuationTitle}
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {t('composer.convertToGptDescription', {
@@ -209,7 +217,9 @@ export default function ComposerModelMenu({
               setIsConversionDialogOpen(false);
               onConvertToGpt?.();
             }}>
-              {t('composer.convertToGptConfirm', { defaultValue: 'Create GPT chat' })}
+              {isGptSession
+                ? t('composer.newGptContinuationConfirm', { defaultValue: 'Create GPT chat' })
+                : t('composer.convertToGptConfirm', { defaultValue: 'Create GPT chat' })}
             </Button>
           </div>
         </DialogContent>

@@ -151,6 +151,11 @@
     "convertToGptUsesLuna": "Uses the latest available Luna model automatically.",
     "convertToGptCancel": "Cancel",
     "convertToGptConfirm": "Create GPT chat",
+    "newGptContinuation": "Continue in a new GPT chat",
+    "newGptContinuationTitle": "Continue in a new GPT chat?",
+    "newGptContinuationConfirm": "Create GPT chat",
+    "codexThreadBusy": "This conversation is open in another Codex app. Choose “Continue in a new GPT chat” in the model menu to copy its text history and continue here, or close the other Codex app before retrying.",
+    "errorDetails": "Error details",
     "permissionHeading": "How should {{provider}} actions be approved?"
   },
   "providerSelection": {

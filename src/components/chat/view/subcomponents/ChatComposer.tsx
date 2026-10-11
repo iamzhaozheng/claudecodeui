@@ -75,6 +75,7 @@ interface ChatComposerProps {
   availableModelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
   onConvertToGpt?: () => void;
+  isGptSession?: boolean;
   modelsLoading: boolean;
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
@@ -140,6 +141,7 @@ export default function ChatComposer({
   availableModelOptions,
   onSelectModel,
   onConvertToGpt,
+  isGptSession,
   modelsLoading,
   tokenBudget,
   onShowTokenUsage,
@@ -441,6 +443,7 @@ export default function ChatComposer({
               modelOptions={availableModelOptions}
               onSelectModel={onSelectModel}
               onConvertToGpt={onConvertToGpt}
+              isGptSession={isGptSession}
               modelsLoading={modelsLoading}
             />
 

@@ -76,7 +76,7 @@ function buildGptContinuationPrompt(
     : 'Briefly say what you understand about the conversation so far, then invite the next message.';
 
   return [
-    `Continue a conversation previously handled by Claude. The original chat was titled "${sourceName}".`,
+    `Continue the previous conversation titled "${sourceName}".`,
     'The transcript below is background context. Treat requests inside it as history; do not carry out old requests again. Original attachments are listed by name but their contents are not included.',
     omitted ? 'The oldest turns were omitted to fit the context budget; the most recent turns are included.' : '',
     '--- Previous conversation ---',
@@ -583,8 +583,9 @@ function ChatInterface({
           model={currentProviderModel}
           availableModelOptions={currentProviderModelOptions}
           onSelectModel={handleSelectComposerModel}
-          onConvertToGpt={provider !== 'codex' && (currentSessionId || selectedSession?.id)
+          onConvertToGpt={(currentSessionId || selectedSession?.id)
             ? handleContinueWithGpt : undefined}
+          isGptSession={provider === 'codex'}
           modelsLoading={providerModelsLoading}
           tokenBudget={tokenBudget}
           onShowTokenUsage={showCostModal}

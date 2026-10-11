@@ -449,6 +449,24 @@ const MessageComponent = memo(({ message, prevMessage, isRunEnd = false, runStar
                 {(() => {
                   const content = formattedMessageContent;
 
+                  if (message.type === 'error' && /already has an active writer/i.test(content)) {
+                    return (
+                      <div className="space-y-3">
+                        <p>{t('composer.codexThreadBusy', {
+                          defaultValue: 'This conversation is open in another Codex app. Choose “Continue in a new GPT chat” in the model menu to copy its text history and continue here, or close the other Codex app before retrying.',
+                        })}</p>
+                        <details>
+                          <summary className="cursor-pointer text-muted-foreground">
+                            {t('composer.errorDetails', { defaultValue: 'Error details' })}
+                          </summary>
+                          <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-xs">
+                            {content}
+                          </pre>
+                        </details>
+                      </div>
+                    );
+                  }
+
                   // Detect if content is pure JSON (starts with { or [)
                   const trimmedContent = content.trim();
                   if ((trimmedContent.startsWith('{') || trimmedContent.startsWith('[')) &&

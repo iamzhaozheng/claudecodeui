@@ -226,6 +226,11 @@
     "convertToGptDescription": "将文字历史带入新的 GPT 对话。原对话保留；若原对话在分组中，新对话也会加入该分组。附件只保留名称。",
     "convertToGptUsesLuna": "自动使用最新的 Luna 模型。",
     "convertToGptCancel": "取消",
-    "convertToGptConfirm": "确认转换"
+    "convertToGptConfirm": "确认转换",
+    "newGptContinuation": "新建 GPT 对话继续",
+    "newGptContinuationTitle": "新建 GPT 对话继续？",
+    "newGptContinuationConfirm": "确认创建",
+    "codexThreadBusy": "这条对话正在被另一个 Codex 应用占用。你可以在选模型菜单中选择“新建 GPT 对话继续”，带上文字历史在这里续聊；也可以先关闭占用它的 Codex 应用，再重试。",
+    "errorDetails": "错误详情"
   }
 }
