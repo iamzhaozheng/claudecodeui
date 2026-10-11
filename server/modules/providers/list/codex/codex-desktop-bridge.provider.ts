@@ -471,8 +471,12 @@ async function tryRun(command: string, options: AnyRecord, writer: ProviderRunti
     await client.waitFor(isIdle, run.controller.signal);
     if (controller.signal.aborted) return true;
     const prompt = appendFilesInputTag(command, options.files);
+    // Desktop user input has a richer contract than SDK input. Its renderer
+    // reads text_elements even when a plain text message has no placeholders.
     const input = buildCodexInputItems(prompt, options.images, client.state?.cwd).map(item =>
-      item.type === 'local_image' ? { type: 'localImage', path: item.path } : item);
+      item.type === 'text'
+        ? { ...item, text_elements: [] }
+        : { type: 'localImage', path: item.path });
     // Keep the desktop's managed permission profile and sandbox. Only a model
     // selection made by the user in CloudCLI is passed as a turn override.
     const request: AnyRecord = {

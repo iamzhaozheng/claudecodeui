@@ -31,6 +31,12 @@ interrupt is version 4. A desktop update can change these versions. In that case
 the adapter reports an error instead of taking over the writer or resubmitting
 the message through another process.
 
+Desktop plain text inputs include `text_elements: []`. SDK text inputs omit
+this field, but the desktop renderer requires it. Older CloudCLI builds that
+omitted it can leave an invalid input in the desktop's in-memory view. After
+updating CloudCLI, close and reopen the desktop app once to reload the saved
+history; no conversation rollback or message deletion is needed.
+
 Connection loss or a send timeout can happen after the desktop has received the
 message. Check the original desktop conversation before sending it again. A
 browser refresh reconnects the observer and reloads history from the desktop.
