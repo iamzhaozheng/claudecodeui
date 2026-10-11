@@ -5,13 +5,15 @@ import path from 'node:path';
 import { projectsDb, sessionsDb } from '@/modules/database/index.js';
 import { chatRunRegistry } from '@/modules/websocket/index.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
+import { codexDesktopBridge } from '@/modules/providers/list/codex/codex-desktop-bridge.provider.js';
 import type {
   FetchHistoryOptions,
   FetchHistoryResult,
   LLMProvider,
   NormalizedMessage,
-} from '@/shared/types.js';
-import { AppError } from '@/shared/utils.js';
+  ProviderSessionActivity,
+} from '@/shared/index.js';
+import { AppError } from '@/shared/index.js';
 
 type CreateAppSessionResult = {
   sessionId: string;
@@ -110,13 +112,14 @@ export const sessionsService = {
    * This is intentionally status-only: callers that only need sidebar activity
    * indicators should not attach to chat streams or request replayed messages.
    */
-  listRunningSessions(): Array<{
-    sessionId: string;
-    provider: LLMProvider;
-    startedAt: number;
-    lastSeq: number;
-  }> {
-    return chatRunRegistry.listRunningRuns();
+  listRunningSessions(): ProviderSessionActivity[] {
+    // Polling must include the same native activity reported by subscriptions,
+    // or it would erase the desktop execution indicator every five seconds.
+    const sessions = new Map(codexDesktopBridge.listRunningSessions().map(session => [session.sessionId, session]));
+    for (const run of chatRunRegistry.listRunningRuns()) {
+      sessions.set(run.sessionId, { ...run, canInterrupt: true });
+    }
+    return [...sessions.values()];
   },
 
   /**

@@ -300,6 +300,22 @@ export type ProviderRuntimePermissionGateway = {
 };
 
 /**
+ * Current activity of a provider conversation, consumed by running-session
+ * polling and WebSocket subscriptions. `sessionId` is always the app id;
+ * `startedAt` is the active turn's epoch milliseconds. Desktop-owned activity
+ * has no CloudCLI event sequence (`lastSeq: 0`) and cannot be interrupted by
+ * a passive observer. Omit an entry once its owning connection becomes stale.
+ */
+export type ProviderSessionActivity = {
+  sessionId: string;
+  provider: LLMProvider;
+  startedAt: number;
+  lastSeq: number;
+  statusText?: string;
+  canInterrupt?: boolean;
+};
+
+/**
  * Provider-scoped application capabilities supplied to a runtime for one run.
  *
  * Keeping these lookups outside concrete SDK/CLI adapters prevents the

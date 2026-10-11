@@ -10,16 +10,16 @@ import {
   getGlobalImageAssetsDir,
   isImageAttachmentDescriptor,
   normalizeAttachmentDescriptors,
-  type ChatAttachmentDescriptor,
-} from '@/shared/image-attachments.js';
+  parseIncomingJsonObject,
+} from '@/shared/index.js';
 import type {
   AnyRecord,
   AuthenticatedWebSocketRequest,
+  ChatAttachmentDescriptor,
   LLMProvider,
   ProviderPermissionDecision,
   ProviderRuntimeWriter,
-} from '@/shared/types.js';
-import { parseIncomingJsonObject } from '@/shared/utils.js';
+} from '@/shared/index.js';
 
 /**
  * Trust boundary for client-supplied image attachments: chat.send options come
@@ -305,11 +305,13 @@ function handleChatSubscribe(
       : 0;
 
     const run = chatRunRegistry.getRun(sessionId);
-    const isProcessing = chatRunRegistry.isProcessing(sessionId);
+    const isLocalRunActive = chatRunRegistry.isProcessing(sessionId);
+    const desktopActivity = isLocalRunActive ? null : codexDesktopBridge.getSessionActivity(sessionId);
+    const isProcessing = isLocalRunActive || Boolean(desktopActivity);
 
     // Future live events for this run should land on the socket that asked —
     // this is what makes mid-stream page refreshes work for all providers.
-    if (isProcessing) {
+    if (isLocalRunActive) {
       chatRunRegistry.attachConnection(sessionId, ws);
     }
 
@@ -320,6 +322,9 @@ function handleChatSubscribe(
       kind: 'chat_subscribed',
       sessionId,
       isProcessing,
+      statusText: desktopActivity?.statusText,
+      startedAt: desktopActivity?.startedAt ?? (isLocalRunActive ? run?.startedAt : undefined),
+      canInterrupt: isLocalRunActive || (desktopActivity ? false : undefined),
       lastSeq: run?.lastSeq ?? 0,
       pendingPermissions,
       timestamp: new Date().toISOString(),
@@ -329,7 +334,7 @@ function handleChatSubscribe(
     // are fully persisted to the provider transcript and served over REST —
     // replaying them (e.g. after a page reload where the client's lastSeq is
     // 0) would duplicate messages the history fetch already returned.
-    if (isProcessing) {
+    if (isLocalRunActive) {
       for (const event of chatRunRegistry.replayEvents(sessionId, lastSeq)) {
         sendJson(ws, event);
       }

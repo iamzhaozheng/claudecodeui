@@ -11,6 +11,10 @@ send a message normally. The desktop app must remain open.
   Stopping that waiting message does not interrupt the preceding desktop turn.
 - Replies to phone messages stream through CloudCLI. An open CloudCLI chat also
   follows new messages and completed reply items from desktop activity.
+- Execution indicators, current step, and elapsed time use the desktop's live
+  turn state, including after a browser refresh or WebSocket reconnection.
+  Status polling includes those observed desktop turns so it cannot clear an
+  ongoing turn simply because CloudCLI did not start it.
 - Shared turns inherit the desktop conversation's permissions and workspace.
   The model and reasoning effort selected in CloudCLI may override the next turn.
   Command and file approval decisions are forwarded to the desktop owner.

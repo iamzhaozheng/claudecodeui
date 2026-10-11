@@ -17,6 +17,7 @@ import type {
   FetchHistoryResult,
   NormalizedMessage,
   ProviderPermissionDecision,
+  ProviderSessionActivity,
   ProviderRuntimeWriter,
 } from '@/shared/index.js';
 
@@ -57,6 +58,7 @@ type DesktopApproval = {
 };
 const runs = new Map<string, DesktopRun>();
 const connectingRuns = new Map<string, AbortController>();
+const observedClients = new Map<string, Set<DesktopThreadClient>>();
 const approvals = new Map<string, DesktopApproval>();
 
 function send(writer: ProviderRuntimeWriter, message: NormalizedMessage) {
@@ -117,6 +119,7 @@ function applyStatePatches(state: AnyRecord, patches: AnyRecord[]): AnyRecord {
 }
 
 class DesktopThreadClient {
+  connectedAt = Date.now();
   owner = '';
   state: AnyRecord | null = null;
   revision = -1;
@@ -328,6 +331,11 @@ function inputText(input: unknown): string {
   return Array.isArray(input) ? input.map(item => typeof item === 'string' ? item : item?.text || '').filter(Boolean).join('\n') : '';
 }
 
+function itemFinished(item: AnyRecord, turn: AnyRecord): boolean {
+  return turn.status !== 'inProgress' || Boolean(turn.completedItemIds?.[item.id]) ||
+    ['completed', 'failed', 'declined'].includes(item.status);
+}
+
 function itemMessages(item: AnyRecord, turn: AnyRecord, sessionId: string): NormalizedMessage[] {
   if (!item.id) return [];
   const base = {
@@ -355,7 +363,9 @@ function itemMessages(item: AnyRecord, turn: AnyRecord, sessionId: string): Norm
     return [createNormalizedMessage({
       ...base, kind: 'tool_use', toolId: base.id, toolName: 'Bash',
       toolInput: { command: item.command },
-      toolResult: { content: item.aggregatedOutput || '', isError: Boolean(item.exitCode) || item.status === 'failed' },
+      toolResult: itemFinished(item, turn)
+        ? { content: item.aggregatedOutput || '', isError: Boolean(item.exitCode) || item.status === 'failed' }
+        : undefined,
       status: item.status,
     })];
   }
@@ -364,8 +374,11 @@ function itemMessages(item: AnyRecord, turn: AnyRecord, sessionId: string): Norm
     return [createNormalizedMessage({
       ...base, kind: 'tool_use', toolId: base.id, toolName,
       toolInput: item.changes || item.arguments || { query: item.query },
-      toolResult: item.result || item.error
-        ? { content: typeof item.result === 'string' ? item.result : JSON.stringify(item.result || item.error), isError: Boolean(item.error) }
+      toolResult: itemFinished(item, turn)
+        ? {
+          content: typeof item.result === 'string' ? item.result : item.result || item.error ? JSON.stringify(item.result ?? item.error) : '',
+          isError: Boolean(item.error) || item.status === 'failed' || item.status === 'declined',
+        }
         : undefined,
       status: item.status,
     })];
@@ -377,6 +390,45 @@ function currentTurn(run: DesktopRun): AnyRecord | undefined {
   return turnsFromState(run.client.state || {}).find(turn =>
     turn.params?.clientUserMessageId === run.clientUserMessageId ||
     (run.turnId && turn.turnId === run.turnId));
+}
+
+function sessionActivity(client: DesktopThreadClient, sessionId: string): ProviderSessionActivity | null {
+  if (client.error || !client.state) return null;
+  const state = client.state;
+  const turn = [...turnsFromState(state)].reverse().find(turn => turn.status === 'inProgress');
+  if (!turn && state.threadRuntimeStatus?.type !== 'active') return null;
+  const pending = Boolean(turn?.turnId) && (state.requests || []).some((request: AnyRecord) => request.params?.turnId === turn?.turnId);
+  const item = [...(turn?.items || [])].reverse().find(item =>
+    !turn?.completedItemIds?.[item.id] && !['completed', 'failed', 'declined'].includes(item.status));
+  const labels: Record<string, string> = {
+    reasoning: '正在思考…',
+    commandExecution: '正在执行命令…',
+    fileChange: '正在修改文件…',
+    mcpToolCall: '正在调用工具…',
+    webSearch: '正在搜索…',
+  };
+  return {
+    sessionId, provider: 'codex', lastSeq: 0, canInterrupt: false,
+    startedAt: turn?.turnStartedAtMs || client.connectedAt,
+    statusText: pending ? '等待确认…' : labels[item?.type] || '正在回复…',
+  };
+}
+
+function getSessionActivity(sessionId: string): ProviderSessionActivity | null {
+  for (const client of observedClients.get(sessionId) || []) {
+    const activity = sessionActivity(client, sessionId);
+    if (activity) return activity;
+  }
+  const run = runs.get(sessionId);
+  return run ? sessionActivity(run.client, sessionId) : null;
+}
+
+function listRunningSessions(): ProviderSessionActivity[] {
+  const ids = new Set([...observedClients.keys(), ...runs.keys()]);
+  return [...ids].flatMap(id => {
+    const activity = getSessionActivity(id);
+    return activity ? [activity] : [];
+  });
 }
 
 function updateApprovals(run: DesktopRun, writer: ProviderRuntimeWriter, sessionId: string) {
@@ -612,12 +664,16 @@ async function watch(
   const client = await connectThread(threadId);
   if (!client) return null;
   if (signal.aborted) { client.close(); return null; }
+  const clients = observedClients.get(sessionId) || new Set<DesktopThreadClient>();
+  clients.add(client);
+  observedClients.set(sessionId, clients);
   const seen = new Set(turnsFromState(client.state || {}).flatMap(turn =>
-    (turn.items || []).map((item: AnyRecord) => item.id)));
+    (turn.items || []).filter((item: AnyRecord) => itemFinished(item, turn)).map((item: AnyRecord) => item.id)));
   const watchRun: DesktopRun = {
     client, controller: new AbortController(), turnId: null, clientUserMessageId: '', dispatched: false,
   };
   let wasActive = false;
+  let previousStatus = '';
   let stopped = false;
   let removeListener: () => void = () => undefined;
   const stop = () => {
@@ -625,6 +681,8 @@ async function watch(
     stopped = true;
     removeListener();
     signal.removeEventListener('abort', stop);
+    clients.delete(client);
+    if (!clients.size && observedClients.get(sessionId) === clients) observedClients.delete(sessionId);
     for (const [id, approval] of approvals) if (approval.run === watchRun) approvals.delete(id);
     client.close();
     onStopped?.();
@@ -646,22 +704,37 @@ async function watch(
     if (isLocalRunActive()) {
       for (const turn of turns) for (const item of turn.items || []) seen.add(item.id);
       wasActive = false;
+      previousStatus = '';
       return;
     }
     const activeTurn = [...turns].reverse().find(turn => turn.status === 'inProgress');
-    const active = state.threadRuntimeStatus?.type === 'active' || Boolean(activeTurn);
+    const activity = sessionActivity(client, sessionId);
+    const active = Boolean(activity);
     if (active) {
       watchRun.turnId = activeTurn?.turnId || null;
-      if (!wasActive) send(writer, createNormalizedMessage({
-        provider: 'codex', sessionId, kind: 'status', text: '电脑 Codex 正在回复…', canInterrupt: false,
-      }));
+      const status = JSON.stringify([activity?.statusText, activity?.startedAt]);
+      if (status !== previousStatus) {
+        send(writer, createNormalizedMessage({
+          provider: 'codex', sessionId, kind: 'status', text: activity?.statusText,
+          startedAt: activity?.startedAt, canInterrupt: false,
+        }));
+        previousStatus = status;
+      }
       updateApprovals(watchRun, writer, sessionId);
     }
     for (const turn of turns) for (const item of turn.items || []) {
-      if (seen.has(item.id) ||
-        (turn.status === 'inProgress' && !turn.completedItemIds?.[item.id])) continue;
+      if (seen.has(item.id) || !itemFinished(item, turn)) continue;
       seen.add(item.id);
-      for (const message of itemMessages(item, turn, sessionId)) send(writer, message);
+      for (const message of itemMessages(item, turn, sessionId)) {
+        send(writer, message);
+        // History may already contain this tool's unfinished input row. A
+        // separate result id updates its badge without replacing that row.
+        if (message.kind === 'tool_use' && message.toolResult) send(writer, createNormalizedMessage({
+          provider: 'codex', sessionId, id: message.id + ':result', kind: 'tool_result',
+          toolId: message.toolId, timestamp: message.timestamp,
+          content: message.toolResult.content, isError: message.toolResult.isError,
+        }));
+      }
     }
     if (wasActive && !active) {
       updateApprovals(watchRun, writer, sessionId);
@@ -676,6 +749,7 @@ async function watch(
       }));
     }
     wasActive = active;
+    if (!active) previousStatus = '';
   };
   removeListener = client.onState(update);
   signal.addEventListener('abort', stop, { once: true });
@@ -684,7 +758,7 @@ async function watch(
 }
 
 /**
- * Used by the Codex runtime/history adapter and WebSocket subscriptions to
+ * Used by the Codex runtime/history adapter, running-session service, and WebSocket subscriptions to
  * follow a desktop-owned conversation through its existing local IPC owner.
  * No native ids or groups are replaced. Protocol errors prevent exec retries.
  */
@@ -693,6 +767,8 @@ export const codexDesktopBridge = {
   abort,
   fetchHistory,
   watch,
+  getSessionActivity,
+  listRunningSessions,
   permissions: {
     resolve: resolveApproval,
     listPending: (sessionId: string) => [...approvals.values()]

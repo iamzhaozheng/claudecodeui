@@ -116,7 +116,11 @@ export function useChatRealtimeHandlers({
           if (!sid) return;
 
           if (msg.isProcessing) {
-            onSessionProcessing?.(sid);
+            onSessionProcessing?.(sid, {
+              statusText: typeof msg.statusText === 'string' ? msg.statusText : undefined,
+              canInterrupt: typeof msg.canInterrupt === 'boolean' ? msg.canInterrupt : undefined,
+              startedAt: typeof msg.startedAt === 'number' ? msg.startedAt : undefined,
+            });
           } else {
             // Idle ack: ignore it if a newer request started after the
             // subscribe was sent — the ack describes the older state.
@@ -315,6 +319,7 @@ export function useChatRealtimeHandlers({
             onSessionProcessing?.(sid, {
               statusText: msg.text as string,
               canInterrupt: msg.canInterrupt !== false,
+              startedAt: typeof msg.startedAt === 'number' ? msg.startedAt : undefined,
             });
           }
           break;

@@ -5,8 +5,8 @@ export interface SessionActivity {
   statusText: string | null;
   canInterrupt: boolean;
   /**
-   * When this request was first marked as processing (client clock). Drives
-   * the elapsed-time display and the stale `chat_subscribed` idle-ack guard.
+   * Active turn's start time supplied by the provider, or the client time
+   * when processing began. Drives elapsed time and the idle-ack guard.
    */
   startedAt: number;
 }
@@ -22,7 +22,7 @@ export type SessionActivitySnapshot = {
 
 export type MarkSessionProcessing = (
   sessionId?: string | null,
-  activity?: { statusText?: string | null; canInterrupt?: boolean },
+  activity?: { statusText?: string | null; canInterrupt?: boolean; startedAt?: number },
 ) => void;
 
 export type MarkSessionIdle = (
@@ -83,13 +83,15 @@ export function useSessionProtection() {
         statusText:
           activity?.statusText !== undefined ? activity.statusText : existing?.statusText ?? null,
         canInterrupt: activity?.canInterrupt ?? existing?.canInterrupt ?? true,
-        startedAt: existing?.startedAt ?? Date.now(),
+        startedAt: typeof activity?.startedAt === 'number' && Number.isFinite(activity.startedAt) && activity.startedAt > 0
+          ? activity.startedAt : existing?.startedAt ?? Date.now(),
       };
 
       if (
         existing
         && existing.statusText === next.statusText
         && existing.canInterrupt === next.canInterrupt
+        && existing.startedAt === next.startedAt
       ) {
         return prev;
       }
