@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
 import { getConnection } from '@/modules/database/connection.js';
 import { projectsDb } from '@/modules/database/repositories/projects.db.js';
-import { normalizeProjectPath } from '@/shared/utils.js';
+import { normalizeProjectPath } from '@/shared/index.js';
 
 type SessionRow = {
   session_id: string;
@@ -60,6 +62,7 @@ function normalizeProjectPathForProvider(provider: string, projectPath: string):
   return normalizeProjectPath(projectPath);
 }
 
+/** Providers, Projects and WebSocket persist stable app ids, native ids and transcript locations here. */
 export const sessionsDb = {
   /**
    * Upserts one session row discovered on disk by a provider synchronizer.
@@ -117,6 +120,14 @@ export const sessionsDb = {
       return existing.session_id;
     }
 
+    // A native fork can replace the provider id behind a stable app id. If
+    // the source transcript is indexed again, it needs its own app row; it
+    // must never overwrite the continuation's mapping or group membership.
+    const occupied = db.prepare('SELECT provider_session_id FROM sessions WHERE session_id = ?')
+      .get(providerSessionId) as { provider_session_id: string | null } | undefined;
+    const sessionId = occupied?.provider_session_id && occupied.provider_session_id !== providerSessionId
+      ? randomUUID() : providerSessionId;
+
     // Sessions created outside the app (directly via the provider CLI) are
     // keyed by the provider-native id for both columns. The ON CONFLICT path
     // covers legacy rows that predate the provider_session_id mapping.
@@ -132,7 +143,7 @@ export const sessionsDb = {
          isArchived = 0,
          custom_name = COALESCE(excluded.custom_name, sessions.custom_name)`
     ).run(
-      providerSessionId,
+      sessionId,
       provider,
       providerSessionId,
       customName ?? null,
@@ -142,7 +153,7 @@ export const sessionsDb = {
       updatedAtValue
     );
 
-    return providerSessionId;
+    return sessionId;
   },
 
   /**
@@ -194,23 +205,29 @@ export const sessionsDb = {
         db.prepare(
           `UPDATE sessions SET
              provider_session_id = ?,
-             jsonl_path = COALESCE(jsonl_path, ?),
+             jsonl_path = CASE WHEN provider_session_id = ? THEN COALESCE(jsonl_path, ?) ELSE ? END,
              custom_name = COALESCE(custom_name, ?),
              updated_at = CURRENT_TIMESTAMP
            WHERE session_id = ?`
-        ).run(providerSessionId, duplicate.jsonl_path, duplicate.custom_name, sessionId);
+        ).run(providerSessionId, providerSessionId, duplicate.jsonl_path, duplicate.jsonl_path, duplicate.custom_name, sessionId);
         return;
       }
 
       db.prepare(
         `UPDATE sessions SET
+           jsonl_path = CASE WHEN provider_session_id = ? THEN jsonl_path ELSE NULL END,
            provider_session_id = ?,
            updated_at = CURRENT_TIMESTAMP
          WHERE session_id = ?`
-      ).run(providerSessionId, sessionId);
+      ).run(providerSessionId, providerSessionId, sessionId);
     });
 
     merge();
+  },
+
+  /** Providers records the app-server's transcript path before filesystem indexing catches up. */
+  setSessionTranscriptPath(sessionId: string, jsonlPath: string): void {
+    getConnection().prepare('UPDATE sessions SET jsonl_path = ? WHERE session_id = ?').run(jsonlPath, sessionId);
   },
 
   /**

@@ -5,7 +5,6 @@ import path from 'node:path';
 import { projectsDb, sessionsDb } from '@/modules/database/index.js';
 import { chatRunRegistry } from '@/modules/websocket/index.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
-import { codexDesktopBridge } from '@/modules/providers/list/codex/codex-desktop-bridge.provider.js';
 import type {
   FetchHistoryOptions,
   FetchHistoryResult,
@@ -113,13 +112,7 @@ export const sessionsService = {
    * indicators should not attach to chat streams or request replayed messages.
    */
   listRunningSessions(): ProviderSessionActivity[] {
-    // Polling must include the same native activity reported by subscriptions,
-    // or it would erase the desktop execution indicator every five seconds.
-    const sessions = new Map(codexDesktopBridge.listRunningSessions().map(session => [session.sessionId, session]));
-    for (const run of chatRunRegistry.listRunningRuns()) {
-      sessions.set(run.sessionId, { ...run, canInterrupt: true });
-    }
-    return [...sessions.values()];
+    return chatRunRegistry.listRunningRuns().map(run => ({ ...run, canInterrupt: true }));
   },
 
   /**

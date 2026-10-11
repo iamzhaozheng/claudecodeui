@@ -9,12 +9,14 @@ export type {
   ProviderPermissionDecision,
   ProviderSessionActivity,
   ProviderRuntimeWriter,
+  ProviderRuntimeContext,
 } from './types.js';
 export {
   AppError,
   createCompleteMessage,
   createNormalizedMessage,
   generateMessageId,
+  normalizeProjectPath,
   parseIncomingJsonObject,
   readObjectRecord,
   sliceTailPage,
@@ -31,4 +33,4 @@ export {
   toPosixPath,
 } from './image-attachments.js';
 export type { ChatAttachmentDescriptor } from './image-attachments.js';
-export type { IProviderSessions } from './interfaces.js';
+export type { IProviderRuntime, IProviderSessions } from './interfaces.js';
