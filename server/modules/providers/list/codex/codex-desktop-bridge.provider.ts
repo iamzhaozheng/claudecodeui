@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
+import { registerLocalImagePreview } from '@/modules/assets/index.js';
 import {
   appendFilesInputTag,
   buildCodexInputItems,
@@ -11,6 +12,7 @@ import {
   createNormalizedMessage,
   parseFilesInputTag,
   sliceTailPage,
+  stripCodexAttachmentScaffolding,
 } from '@/shared/index.js';
 import type {
   AnyRecord,
@@ -347,10 +349,12 @@ function itemMessages(item: AnyRecord, turn: AnyRecord, sessionId: string): Norm
   }
   if (item.type === 'userMessage' || item.type === 'steeringUserMessage') {
     const parsed = parseFilesInputTag(inputText(item.content));
-    const images = Array.isArray(item.content) ? item.content.filter((part: AnyRecord) =>
-      part.type === 'localImage' || part.type === 'local_image').map((part: AnyRecord) => ({ path: part.path })) : [];
+    const imagePaths: string[] = Array.isArray(item.content) ? item.content.filter((part: AnyRecord) =>
+      (part.type === 'localImage' || part.type === 'local_image') && typeof part.path === 'string')
+      .map((part: AnyRecord) => part.path) : [];
+    const images = imagePaths.map(imagePath => registerLocalImagePreview(imagePath) || { path: imagePath });
     return [createNormalizedMessage({
-      ...base, kind: 'text', role: 'user', content: parsed.text,
+      ...base, kind: 'text', role: 'user', content: stripCodexAttachmentScaffolding(parsed.text, imagePaths),
       files: parsed.attachments.length ? parsed.attachments : undefined,
       images: images.length ? images : undefined,
     })];

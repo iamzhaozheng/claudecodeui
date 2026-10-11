@@ -15,6 +15,11 @@ send a message normally. The desktop app must remain open.
   turn state, including after a browser refresh or WebSocket reconnection.
   Status polling includes those observed desktop turns so it cannot clear an
   ongoing turn simply because CloudCLI did not start it.
+- Desktop clipboard images use the authenticated CloudCLI attachment endpoint.
+  On first preview, the assets service stores a bounded copy of the registered
+  image so temporary desktop paths do not need to be exposed as file URLs.
+  The web history shows the user's request and image card instead of the
+  desktop's generated attachment scaffold; the native transcript is untouched.
 - Shared turns inherit the desktop conversation's permissions and workspace.
   The model and reasoning effort selected in CloudCLI may override the next turn.
   Command and file approval decisions are forwarded to the desktop owner.

@@ -2,11 +2,18 @@ import fsSync from 'node:fs';
 import readline from 'node:readline';
 
 import { codexDesktopBridge } from '@/modules/providers/list/codex/codex-desktop-bridge.provider.js';
+import { registerLocalImagePreview } from '@/modules/assets/index.js';
 import { sessionsDb } from '@/modules/database/index.js';
-import { parseFilesInputTag, toImageAttachments } from '@/shared/image-attachments.js';
-import type { IProviderSessions } from '@/shared/interfaces.js';
-import type { AnyRecord, FetchHistoryOptions, FetchHistoryResult, NormalizedMessage } from '@/shared/types.js';
-import { createNormalizedMessage, generateMessageId, readObjectRecord, sliceTailPage } from '@/shared/utils.js';
+import type { AnyRecord, FetchHistoryOptions, FetchHistoryResult, IProviderSessions, NormalizedMessage } from '@/shared/index.js';
+import {
+  createNormalizedMessage,
+  generateMessageId,
+  parseFilesInputTag,
+  readObjectRecord,
+  sliceTailPage,
+  stripCodexAttachmentScaffolding,
+  toImageAttachments,
+} from '@/shared/index.js';
 
 const PROVIDER = 'codex';
 
@@ -658,6 +665,9 @@ export class CodexSessionsProvider implements IProviderSessions {
           : String(raw.message.content || '');
       const parsedFiles = parseFilesInputTag(content);
       const rawImages = Array.isArray(raw.images) && raw.images.length > 0 ? raw.images : undefined;
+      const imagePaths = (rawImages || []).flatMap((image: AnyRecord) => typeof image.path === 'string' ? [image.path] : []);
+      const images = rawImages?.map((image: AnyRecord) => typeof image.path === 'string'
+        ? registerLocalImagePreview(image.path) || image : image);
       const files = parsedFiles.attachments.length > 0 ? parsedFiles.attachments : undefined;
       if (!parsedFiles.text.trim() && !rawImages && !files) {
         return [];
@@ -669,8 +679,8 @@ export class CodexSessionsProvider implements IProviderSessions {
         provider: PROVIDER,
         kind: 'text',
         role: 'user',
-        content: parsedFiles.text,
-        images: rawImages,
+        content: stripCodexAttachmentScaffolding(parsedFiles.text, imagePaths),
+        images,
         files,
       })];
     }

@@ -14,8 +14,11 @@ export {
   AppError,
   createCompleteMessage,
   createNormalizedMessage,
+  generateMessageId,
   parseIncomingJsonObject,
+  readObjectRecord,
   sliceTailPage,
+  stripCodexAttachmentScaffolding,
 } from './utils.js';
 export {
   appendFilesInputTag,
@@ -24,5 +27,8 @@ export {
   isImageAttachmentDescriptor,
   normalizeAttachmentDescriptors,
   parseFilesInputTag,
+  toImageAttachments,
+  toPosixPath,
 } from './image-attachments.js';
 export type { ChatAttachmentDescriptor } from './image-attachments.js';
+export type { IProviderSessions } from './interfaces.js';
