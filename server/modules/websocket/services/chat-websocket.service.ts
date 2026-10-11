@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { WebSocket } from 'ws';
 
 import { sessionsDb } from '@/modules/database/index.js';
-import { providerModelsService } from '@/modules/providers/index.js';
+import { codexDesktopBridge, providerModelsService } from '@/modules/providers/index.js';
 import { chatRunRegistry } from '@/modules/websocket/services/chat-run-registry.service.js';
 import { connectedClients, WS_OPEN_STATE } from '@/modules/websocket/services/websocket-state.service.js';
 import {
@@ -313,8 +313,7 @@ function handleChatSubscribe(
       chatRunRegistry.attachConnection(sessionId, ws);
     }
 
-    // Pending approvals are tracked under the app session id inside the
-    // Claude runtime, so they can be looked up directly.
+    // Provider approvals, including desktop Codex requests, use the app id.
     const pendingPermissions = dependencies.runtime.getPendingApprovalsForSession(sessionId);
 
     sendJson(ws, {
@@ -340,8 +339,7 @@ function handleChatSubscribe(
 
 /**
  * Handles `chat.permission-response`: forwards a tool-approval decision to the
- * pending approval resolver (Claude is the only provider with interactive
- * approvals today, but the message is intentionally provider-neutral).
+ * pending provider approval resolver, including the desktop Codex owner.
  */
 function handlePermissionResponse(data: AnyRecord, dependencies: ChatWebSocketDependencies): void {
   if (typeof data.requestId !== 'string' || data.requestId.length === 0) {
@@ -380,6 +378,37 @@ export function handleChatConnection(
   connectedClients.add(ws);
 
   const userId = readRequestUserId(request);
+  const desktopObservations = new Map<string, AbortController>();
+  const observeDesktopSessions = (data: AnyRecord) => {
+    const targets = new Set<string>((Array.isArray(data.sessions) ? data.sessions : [])
+      .map((target: AnyRecord) => typeof target?.sessionId === 'string' ? target.sessionId.trim() : '')
+      .filter(Boolean).slice(0, 20));
+    for (const [id, controller] of desktopObservations) {
+      if (!targets.has(id)) { controller.abort(); desktopObservations.delete(id); }
+    }
+    for (const sessionId of targets) {
+      if (desktopObservations.has(sessionId)) continue;
+      const session = sessionsDb.getSessionById(sessionId);
+      if (session?.provider !== 'codex' || !session.provider_session_id) continue;
+      const controller = new AbortController();
+      desktopObservations.set(sessionId, controller);
+      void codexDesktopBridge.watch(
+        session.provider_session_id, sessionId,
+        { send: (message) => sendJson(ws, message), isWebSocketWriter: true, userId },
+        () => chatRunRegistry.isProcessing(sessionId), controller.signal,
+        () => {
+          if (desktopObservations.get(sessionId) === controller) desktopObservations.delete(sessionId);
+          controller.abort();
+        },
+      ).then(stop => {
+        if (!stop && desktopObservations.get(sessionId) === controller) desktopObservations.delete(sessionId);
+        else if (stop && controller.signal.aborted) stop();
+      }).catch(error => {
+        if (desktopObservations.get(sessionId) === controller) desktopObservations.delete(sessionId);
+        console.warn('[Chat] Desktop Codex observation unavailable:', error instanceof Error ? error.message : String(error));
+      });
+    }
+  };
 
   ws.on('message', async (rawMessage) => {
     try {
@@ -400,6 +429,7 @@ export function handleChatConnection(
           return;
         case 'chat.subscribe':
           handleChatSubscribe(ws, data, dependencies);
+          observeDesktopSessions(data);
           return;
         case 'chat.permission-response':
           handlePermissionResponse(data, dependencies);
@@ -429,5 +459,7 @@ export function handleChatConnection(
   ws.on('close', () => {
     console.log('[INFO] Chat client disconnected');
     connectedClients.delete(ws);
+    for (const controller of desktopObservations.values()) controller.abort();
+    desktopObservations.clear();
   });
 }

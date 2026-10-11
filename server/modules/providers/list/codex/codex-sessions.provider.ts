@@ -1,6 +1,7 @@
 import fsSync from 'node:fs';
 import readline from 'node:readline';
 
+import { codexDesktopBridge } from '@/modules/providers/list/codex/codex-desktop-bridge.provider.js';
 import { sessionsDb } from '@/modules/database/index.js';
 import { parseFilesInputTag, toImageAttachments } from '@/shared/image-attachments.js';
 import type { IProviderSessions } from '@/shared/interfaces.js';
@@ -881,6 +882,16 @@ export class CodexSessionsProvider implements IProviderSessions {
     options: FetchHistoryOptions = {},
   ): Promise<FetchHistoryResult> {
     const { limit = null, offset = 0 } = options;
+
+    try {
+      const desktopHistory = await codexDesktopBridge.fetchHistory(
+        options.providerSessionId || sessionId, sessionId, limit, offset,
+      );
+      if (desktopHistory) return desktopHistory;
+    } catch (error) {
+      console.warn('[CodexProvider] Desktop history unavailable:',
+        error instanceof Error ? error.message : String(error));
+    }
 
     let result: CodexHistoryResult;
     try {

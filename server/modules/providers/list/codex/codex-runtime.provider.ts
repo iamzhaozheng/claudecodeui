@@ -13,6 +13,7 @@
 
 import { Codex, type Thread, type ThreadOptions } from '@openai/codex-sdk';
 
+import { codexDesktopBridge } from '@/modules/providers/list/codex/codex-desktop-bridge.provider.js';
 import {
   appendFilesInputTag,
   buildCodexInputItems,
@@ -254,6 +255,10 @@ async function queryCodex(
   // provider-native id recorded on the session row.
   const providerSessionId = context.resolveProviderSessionId(sessionId);
 
+  if (providerSessionId && await codexDesktopBridge.tryRun(command, options, ws, providerSessionId)) {
+    return;
+  }
+
   const resolvedModel = await context.resolveResumeModel(sessionId, model);
 
   const workingDirectory = cwd || projectPath || process.cwd();
@@ -481,7 +486,8 @@ function abortCodexSession(sessionId: string) {
 /** Used by the Providers registry to run and abort Codex SDK turns. */
 export const codexRuntime: IProviderRuntime = {
   run: queryCodex,
-  abort: abortCodexSession,
+  abort: async (sessionId) => await codexDesktopBridge.abort(sessionId) || abortCodexSession(sessionId),
+  permissions: codexDesktopBridge.permissions,
 };
 
 /**
