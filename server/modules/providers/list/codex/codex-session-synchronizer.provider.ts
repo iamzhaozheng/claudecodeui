@@ -9,8 +9,8 @@ import {
   findFilesRecursivelyCreatedAfter,
   normalizeSessionName,
   readFileTimestamps,
-} from '@/shared/utils.js';
-import type { IProviderSessionSynchronizer } from '@/shared/interfaces.js';
+} from '@/shared/index.js';
+import type { IProviderSessionSynchronizer } from '@/shared/index.js';
 
 type ParsedSession = {
   sessionId: string;
@@ -19,7 +19,7 @@ type ParsedSession = {
 };
 
 /**
- * Session indexer for Codex transcript artifacts.
+ * Providers uses this indexer at startup and on transcript changes to persist Codex sessions.
  */
 export class CodexSessionSynchronizer implements IProviderSessionSynchronizer {
   private readonly provider = 'codex' as const;

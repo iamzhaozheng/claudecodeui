@@ -15,10 +15,15 @@ export {
   AppError,
   createCompleteMessage,
   createNormalizedMessage,
+  buildLookupMap,
+  extractFirstValidJsonlData,
+  findFilesRecursivelyCreatedAfter,
   generateMessageId,
   normalizeProjectPath,
+  normalizeSessionName,
   parseIncomingJsonObject,
   readObjectRecord,
+  readFileTimestamps,
   sliceTailPage,
   stripCodexAttachmentScaffolding,
 } from './utils.js';
@@ -33,4 +38,4 @@ export {
   toPosixPath,
 } from './image-attachments.js';
 export type { ChatAttachmentDescriptor } from './image-attachments.js';
-export type { IProviderRuntime, IProviderSessions } from './interfaces.js';
+export type { IProviderRuntime, IProviderSessions, IProviderSessionSynchronizer } from './interfaces.js';
