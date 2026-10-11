@@ -203,11 +203,8 @@ export default function ComposerModelMenu({
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {t('composer.convertToGptDescription', {
-              defaultValue: 'A new GPT chat will receive the text history. The original chat stays here. If it is in a group, the new chat joins that group too. Attachments are listed by name only.',
+              defaultValue: 'Copy text history to a new GPT chat. The original stays; only attachment names are included.',
             })}
-          </p>
-          <p className="mt-4 rounded-md bg-muted/50 px-3 py-2 text-sm text-foreground">
-            {t('composer.convertToGptUsesLuna', { defaultValue: 'Uses the latest available Luna model automatically.' })}
           </p>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsConversionDialogOpen(false)}>
